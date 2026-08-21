@@ -2,149 +2,140 @@ package com.dramafren
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.webkit.CookieManager
 
-const val DEFAULT_API_BASE = "https://api.dramafren.org"
-const val DEFAULT_REEL_BASE = "https://reelfren.dramafren.org"
-const val DEFAULT_BASE = DEFAULT_API_BASE // primary
+const val DEFAULT_BASE_URL = "https://goodshort.dramafren.org"
 
 val DRAMAFREN_CATALOG: List<Pair<String, String>> = listOf(
-    "Melolo" to "melolo",
-    "Sereal+" to "sereal",
-    "PineDrama" to "pinedrama",
-    "Shorten" to "shorten",
-    "HappyShort" to "happyshort",
-    "Vigloo" to "vigloo",
-    "RaptDrama" to "raptdrama",
-    "CubeTV" to "cubetv",
-    "JoyReels" to "joyreels",
-    "AnyReel" to "anyreel",
-    "MiniTV" to "minitv",
-    "Bstation" to "bstation",
-    "GoldDrama" to "golddrama",
-    "Reelife" to "reelife",
-    "ReelShort" to "reelshort",
+    "DramaFren" to "dramafren",
     "DramaBox" to "dramabox",
-    "DramaNova" to "dramanova",
-    "KalosTV" to "kalostv",
-    "VibeShort" to "vibeshort",
-    "FreeReels" to "freereels",
-    "WeTV" to "wetv",
-    "StoryReel" to "storyreel",
-    "MovieBox" to "moviebox",
-    "MovieBox Shorts" to "movieboxshorts",
-    "MyDrama" to "mydrama",
-    "FlareFlow" to "flareflow",
-    "PlayLet" to "playlet",
+    "GoodShort" to "goodshort",
+    "NetShort" to "netshort",
+    "FlickReels" to "flickreels",
+    "StarDustTV" to "stardusttv",
+    "DramaWave" to "dramawave",
     "ShortMax" to "shortmax",
+    "ReelShort" to "reelshort",
+    "iDrama" to "idrama",
+    "FlexTV" to "flextv",
+    "DreameShort" to "dreameshort",
+    "StarShort" to "starshort",
+    "KalosTV" to "kalostv",
+    "DramaBite" to "dramabite",
+    "ShotShort" to "shotshort",
+    "DramaPops" to "dramapops",
+    "MicroDrama" to "microdrama",
+    "ShortWave" to "shortwave",
+    "MoboReels" to "moboreels",
+    "ReelFren" to "reelfren",
 )
 
-/** provider slug -> display name */
-val PROVIDER_NAMES: Map<String, String> = DRAMAFREN_CATALOG.toMap()
+val APP_NAMES: Map<String, String> = DRAMAFREN_CATALOG.toMap()
 
-/** category suffix per provider (empty = no extra param) — merged view shows all */
-val PROVIDER_CATEGORY_PARAM: Map<String, String> = mapOf(
-    "sereal" to "feed=latest",
-    "pinedrama" to "category=0",
-    "shorten" to "category=releases",
-    "happyshort" to "category=home",
-    "vigloo" to "category=home",
-    "bstation" to "category=dracin",
-    "golddrama" to "category=all",
-    "reelife" to "category=all",
-    "dramanova" to "category=all",
-    "kalostv" to "category=all",
-    "vibeshort" to "category=all",
-    "freereels" to "category=all",
-    "moviebox" to "category=1232643093049001320",
-    "movieboxshorts" to "category=all",
-    "mydrama" to "category=all",
-)
+private val CATALOG_SLUGS_BY_LENGTH: List<String> =
+    DRAMAFREN_CATALOG.map { it.second }.sortedByDescending { it.length }
 
 fun browserHeaders(): Map<String, String> = mapOf(
-    "User-Agent" to "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+    "User-Agent" to
+        "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
     "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language" to "en-US,en;q=0.9",
-    "Referer" to "$DEFAULT_BASE/",
 )
 
 object DramaFrenStore {
     private const val PREFS = "dramafren_prefs"
-    private const val KEY_API_OVERRIDE = "api_base_override"
-    private const val KEY_REEL_OVERRIDE = "reel_base_override"
+    private const val KEY_OVERRIDE = "base_url_override"
     private const val KEY_CF_PREFIX = "cf_cookie_"
 
-    @Volatile private var prefs: SharedPreferences? = null
+    @Volatile
+    private var prefs: SharedPreferences? = null
 
     fun init(context: Context) {
-        if (prefs == null) synchronized(this) {
-            if (prefs == null) prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs == null) {
+            synchronized(this) {
+                if (prefs == null) {
+                    prefs = context.applicationContext
+                        .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                }
+            }
         }
     }
 
-    fun apiBase(): String = normalizeBaseUrl(prefs?.getString(KEY_API_OVERRIDE, null)) ?: DEFAULT_API_BASE
-    fun reelBase(): String = normalizeBaseUrl(prefs?.getString(KEY_REEL_OVERRIDE, null)) ?: DEFAULT_REEL_BASE
-    // for provider MainAPI.mainUrl compatibility (single)
-    fun base(): String = apiBase()
+    fun loadOverride(): String? =
+        prefs?.getString(KEY_OVERRIDE, null)?.takeIf { it.isNotBlank() }
 
-    fun saveApiBase(raw: String?) {
-        val n = normalizeBaseUrl(raw)
-        val e = prefs?.edit() ?: return
-        if (n == null) e.remove(KEY_API_OVERRIDE) else e.putString(KEY_API_OVERRIDE, n)
-        e.apply()
+    fun saveOverride(url: String?) {
+        val editor = prefs?.edit() ?: return
+        if (url.isNullOrBlank()) editor.remove(KEY_OVERRIDE) else editor.putString(KEY_OVERRIDE, url)
+        editor.apply()
     }
-    fun saveReelBase(raw: String?) {
-        val n = normalizeBaseUrl(raw)
-        val e = prefs?.edit() ?: return
-        if (n == null) e.remove(KEY_REEL_OVERRIDE) else e.putString(KEY_REEL_OVERRIDE, n)
-        e.apply()
-    }
-    fun loadApiOverride(): String? = prefs?.getString(KEY_API_OVERRIDE, null)?.takeIf { it.isNotBlank() }
-    fun loadReelOverride(): String? = prefs?.getString(KEY_REEL_OVERRIDE, null)?.takeIf { it.isNotBlank() }
 
-    // Cloudflare cookies per host
-    fun saveCfCookie(url: String, cookie: String) {
-        val host = runCatching { java.net.URL(url).host }.getOrNull() ?: return
-        prefs?.edit()?.putString(KEY_CF_PREFIX + host, cookie)?.apply()
-        // also push to WebView CookieManager for immediate use
-        runCatching { CookieManager.getInstance().setCookie(url, cookie) }
+    fun saveCfCookie(domain: String, cookie: String) {
+        prefs?.edit()?.putString(KEY_CF_PREFIX + domain, cookie)?.apply()
     }
-    fun getCfCookie(host: String): String? = prefs?.getString(KEY_CF_PREFIX + host, null)
-    fun getCfCookieForUrl(url: String): String? {
-        val host = runCatching { java.net.URL(url).host }.getOrNull() ?: return null
-        return getCfCookie(host)
+
+    fun loadCfCookie(domain: String): String? =
+        prefs?.getString(KEY_CF_PREFIX + domain, null)?.takeIf { it.isNotBlank() }
+
+    fun clearCfCookie(domain: String) {
+        prefs?.edit()?.remove(KEY_CF_PREFIX + domain)?.apply()
     }
 }
 
 fun normalizeBaseUrl(input: String?): String? {
-    val t = input?.trim()?.trimEnd('/') ?: return null
-    if (t.isEmpty()) return null
-    return if (t.startsWith("http://") || t.startsWith("https://")) t else "https://$t"
+    val trimmed = input?.trim()?.trimEnd('/') ?: return null
+    if (trimmed.isEmpty()) return null
+    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        trimmed
+    } else {
+        "https://$trimmed"
+    }
 }
-
-/** /drama/{provider}/{id}-{slug}?lang=en  -> (provider, id) */
-private val CATALOG_SLUGS_BY_LENGTH = DRAMAFREN_CATALOG.map { it.second }.sortedByDescending { it.length }
 
 fun parseDramaUrl(link: String): Pair<String, String>? {
     val path = link.substringBefore('?').substringBefore('#').trimEnd('/')
     val marker = "/drama/"
     val idx = path.lastIndexOf(marker)
-    if (idx == -1) return null
-    val after = path.substring(idx + marker.length) // provider/id-slug
-    val slash = after.indexOf('/')
-    if (slash == -1) return null
-    val provider = after.substring(0, slash)
-    if (provider !in PROVIDER_NAMES.values && provider !in DRAMAFREN_CATALOG.map { it.second }) return null
-    val rest = after.substring(slash + 1)
-    // id is leading digits before '-'
-    val id = rest.substringBefore('-')
-    if (id.isEmpty() || !id.all { it.isDigit() }) return null
-    return provider to id
+    if (idx == -1) {
+        val segs = path.split("/").filter { it.isNotBlank() }
+        if (segs.size >= 2) {
+            val last = segs.last()
+            val second = segs[segs.size - 2]
+            if (last.all { it.isLetterOrDigit() || it == '-' }) {
+                for (app in CATALOG_SLUGS_BY_LENGTH) {
+                    if (second.equals(app, ignoreCase = true)) return app to last
+                }
+            }
+        }
+        return null
+    }
+    val slug = path.substring(idx + marker.length)
+    for (app in CATALOG_SLUGS_BY_LENGTH) {
+        val suffix = "-$app-"
+        val at = slug.lastIndexOf(suffix)
+        if (at != -1) {
+            val id = slug.substring(at + suffix.length)
+            if (id.isNotEmpty() && id.all { it.isLetterOrDigit() }) return app to id
+        }
+    }
+    val parts = slug.split("-")
+    if (parts.size >= 2) {
+        val id = parts.last()
+        if (id.all { it.isLetterOrDigit() }) {
+            for (app in CATALOG_SLUGS_BY_LENGTH) {
+                if (slug.contains("-$app-")) return app to id
+            }
+        }
+    }
+    return null
 }
 
-fun providerExploreUrl(base: String, provider: String, page: Int): String {
-    val cat = PROVIDER_CATEGORY_PARAM[provider]
-    val pagePart = if (page > 1) "&page=$page" else ""
-    return if (cat != null) "$base/explore?provider=$provider&lang=en&$cat$pagePart"
-    else "$base/explore?provider=$provider&lang=en$pagePart"
+fun isCloudflareChallenge(html: String?, code: Int): Boolean {
+    if (html == null) return code == 403 || code == 503
+    val markers = listOf(
+        "Just a moment", "challenge-platform", "cf-browser-verification",
+        "Checking your browser", "Attention Required", "cf_chl", "ray_id"
+    )
+    return (code == 403 || code == 503 || code == 429) &&
+        markers.any { html.contains(it, ignoreCase = true) } ||
+        html.contains("cf-mitigated", ignoreCase = true)
 }
