@@ -7,139 +7,111 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
 object DramaFrenSettingsDialog {
-
     var onDomainChanged: (() -> Unit)? = null
-    var onCloudflareSolved: (() -> Unit)? = null
 
-    fun show(context: Context, currentBaseUrl: String) {
+    fun show(context: Context, currentBase: String) {
         val pad = (20 * context.resources.displayMetrics.density).toInt()
 
-        val input = EditText(context).apply {
-            hint = "Leave empty for $DEFAULT_BASE_URL"
-            setText(DramaFrenStore.loadOverride() ?: "")
+        val apiInput = EditText(context).apply {
+            hint = "API base (empty = $DEFAULT_API_BASE)"
+            setText(DramaFrenStore.loadApiOverride() ?: "")
+            isSingleLine = true
+            setSelectAllOnFocus(true)
+        }
+        val reelInput = EditText(context).apply {
+            hint = "Reel base (empty = $DEFAULT_REEL_BASE)"
+            setText(DramaFrenStore.loadReelOverride() ?: "")
             isSingleLine = true
             setSelectAllOnFocus(true)
         }
 
-        val status = TextView(context).apply {
-            val cf = DramaFrenStore.loadCfCookie(currentBaseUrl) ?: DramaFrenStore.loadCfCookie(DEFAULT_BASE_URL)
-            text = if (cf != null) "✓ Cloudflare cookies saved" else "No Cloudflare cookies saved"
-            textSize = 12f
-            setTextColor(if (cf != null) Color.parseColor("#2E7D32") else Color.GRAY)
-        }
-
-        val cfButton = TextView(context).apply {
-            text = "🛡️ Solve Cloudflare Challenge — tap to open WebView"
-            textSize = 14f
-            setTextColor(Color.parseColor("#1565C0"))
-            setPadding(pad, 12, pad, 12)
-            setOnClickListener {
-                showCloudflareWebView(context, currentBaseUrl)
-            }
+        val cfButton = Button(context).apply {
+            text = "🛡️ Solve Cloudflare"
+            setOnClickListener { showCfWebView(context, DramaFrenStore.apiBase()) }
         }
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad / 2, pad, 0)
+            setPadding(pad, pad/2, pad, 0)
             addView(TextView(context).apply {
-                text = "Current: $currentBaseUrl"
+                text = "Current: $currentBase"
                 textSize = 13f
                 setTextColor(Color.GRAY)
             })
-            addView(input)
-            addView(TextView(context).apply {
-                text = "Enter a mirror domain, e.g. https://mirror.example.com"
-                textSize = 12f
-                setTextColor(Color.DKGRAY)
-            })
-            addView(status)
+            addView(TextView(context).apply { text = "API Domain"; setTextColor(Color.DKGRAY); textSize = 12f })
+            addView(apiInput)
+            addView(TextView(context).apply { text = "Reel Domain (Cloudflare)"; setTextColor(Color.DKGRAY); textSize = 12f })
+            addView(reelInput)
             addView(cfButton)
+            addView(TextView(context).apply {
+                text = "Change domain if site moves. Tap Cloudflare if you see 403 / Just a moment."
+                textSize = 11f
+                setTextColor(Color.GRAY)
+            })
         }
 
-        val dialog = AlertDialog.Builder(context)
+        AlertDialog.Builder(context)
             .setTitle("DramaFren Settings")
             .setView(root)
-            .setPositiveButton("Save Domain") { _, _ -> applyDomain(input.text?.toString()) }
-            .setNeutralButton("Use default") { _, _ -> applyDomain("") }
+            .setPositiveButton("Save") { _, _ ->
+                DramaFrenStore.saveApiBase(apiInput.text?.toString())
+                DramaFrenStore.saveReelBase(reelInput.text?.toString())
+                onDomainChanged?.invoke()
+                Toast.makeText(context, "Saved — reloading…", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Use defaults") { _, _ ->
+                DramaFrenStore.saveApiBase(null)
+                DramaFrenStore.saveReelBase(null)
+                onDomainChanged?.invoke()
+            }
             .setNegativeButton("Cancel", null)
-            .create()
-        dialog.show()
+            .show()
     }
 
-    fun applyDomain(raw: String?): String {
-        val normalized = normalizeBaseUrl(raw)
-        DramaFrenStore.saveOverride(normalized)
-        onDomainChanged?.invoke()
-        return normalized ?: DEFAULT_BASE_URL
-    }
-
-    private fun showCloudflareWebView(context: Context, baseUrl: String) {
+    private fun showCfWebView(context: Context, url: String) {
         val webView = WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.userAgentString = browserHeaders()["User-Agent"]
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    view?.evaluateJavascript("(function(){return document.documentElement.outerHTML;})()") { html ->
-                        if (html != null && !html.contains("Just a moment") && !html.contains("challenge-platform")) {
-                            val cookies = CookieManager.getInstance().getCookie(url ?: baseUrl)
-                            if (!cookies.isNullOrBlank()) {
-                                val domain = try { java.net.URL(url ?: baseUrl).host } catch (_: Exception) { baseUrl }
-                                DramaFrenStore.saveCfCookie(domain, cookies)
-                                DramaFrenStore.saveCfCookie(baseUrl, cookies)
-                                Toast.makeText(context, "✓ Cloudflare solved — cookies saved", Toast.LENGTH_SHORT).show()
-                                onCloudflareSolved?.invoke()
-                            }
-                        }
-                    }
-                }
-            }
+            webViewClient = WebViewClient()
         }
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        webView.loadUrl(url)
 
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            addView(webView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 900))
             addView(TextView(context).apply {
-                text = "Solve Cloudflare — wait for the site to load, then tap Save"
-                textSize = 13f
+                text = "Solve the Cloudflare challenge, then tap Save Cookies"
+                setPadding(20, 10, 20, 10)
                 setTextColor(Color.DKGRAY)
-                setPadding(20, 20, 20, 10)
             })
-            addView(webView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         }
 
-        val dialog = AlertDialog.Builder(context)
-            .setTitle("Cloudflare Check — $baseUrl")
+        AlertDialog.Builder(context)
+            .setTitle("Cloudflare — $url")
             .setView(container)
-            .setPositiveButton("Save Cookies") { _, _ ->
-                val cookies = CookieManager.getInstance().getCookie(baseUrl)
+            .setPositiveButton("💾 Save Cookies") { _, _ ->
+                val cookies = CookieManager.getInstance().getCookie(url)
                 if (!cookies.isNullOrBlank()) {
-                    val domain = try { java.net.URL(baseUrl).host } catch (_: Exception) { baseUrl }
-                    DramaFrenStore.saveCfCookie(domain, cookies)
-                    DramaFrenStore.saveCfCookie(baseUrl, cookies)
-                    Toast.makeText(context, "✓ Cookies saved", Toast.LENGTH_SHORT).show()
-                    onCloudflareSolved?.invoke()
+                    DramaFrenStore.saveCfCookie(url, cookies)
+                    val other = if (url.contains("reelfren")) DramaFrenStore.apiBase() else DramaFrenStore.reelBase()
+                    DramaFrenStore.saveCfCookie(other, cookies)
+                    Toast.makeText(context, "Cookies saved", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "No cookies found — try waiting longer", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "No cookies found — wait for page to finish loading", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Close", null)
-            .setNeutralButton("Clear Cookies") { _, _ ->
-                val domain = try { java.net.URL(baseUrl).host } catch (_: Exception) { baseUrl }
-                DramaFrenStore.clearCfCookie(domain)
-                DramaFrenStore.clearCfCookie(baseUrl)
-                CookieManager.getInstance().removeAllCookies(null)
-                Toast.makeText(context, "Cookies cleared", Toast.LENGTH_SHORT).show()
-            }
-            .create()
-
-        dialog.show()
-        webView.loadUrl(baseUrl)
+            .setNeutralButton("Open Reel") { _, _ -> showCfWebView(context, DramaFrenStore.reelBase()) }
+            .show()
     }
 }
