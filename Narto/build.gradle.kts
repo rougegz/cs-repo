@@ -3,6 +3,8 @@ import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
+version = 1
+
 // Narto is a separate extension that shares the same root build logic
 // cloudstream block is defined here per-extension
 

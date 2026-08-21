@@ -4,17 +4,11 @@ import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Color
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/**
- * Minimal programmatic settings UI (no resources needed).
- * Lets the user point the provider at a different domain, e.g. a mirror.
- * Blank input = use the default site.
- */
 object VdramaSettingsDialog {
-
-    /** Invoked after a successful change; the plugin wires it to reload home. */
     var onDomainChanged: (() -> Unit)? = null
 
     fun show(context: Context, currentBaseUrl: String) {
@@ -25,21 +19,25 @@ object VdramaSettingsDialog {
             setText(VdramaStore.loadOverride() ?: "")
             isSingleLine = true
             setSelectAllOnFocus(true)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
             addView(TextView(context).apply {
                 text = "Current: $currentBaseUrl"
                 textSize = 13f
                 setTextColor(Color.GRAY)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             })
             addView(input)
             addView(TextView(context).apply {
                 text = "Enter a mirror domain, e.g. https://mirror.example.com"
                 textSize = 12f
                 setTextColor(Color.DKGRAY)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             })
         }
 
@@ -52,7 +50,6 @@ object VdramaSettingsDialog {
             .show()
     }
 
-    /** Normalize + persist + notify. Returns the effective base url. */
     fun applyDomain(raw: String?): String {
         val normalized = normalizeBaseUrl(raw)
         VdramaStore.saveOverride(normalized)
