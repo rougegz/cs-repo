@@ -8,6 +8,12 @@ into twenty endlessly-scrollable home categories:
 > · Dramamax · NetShort · MoboReels · iDrama · Pinedrama · ShortMax · DramaBite
 > · Flareflow · WeTV · iQIYI · DramaNova · Melolo · StarShort
 
+> **Install — tap to add to CloudStream:**
+> [`cloudstreamrepo://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json`](cloudstreamrepo://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json)
+>
+> Raw link (long-press to copy):
+> `https://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json`
+
 ## Features
 
 - **20 home categories**, one row per source app, in the order above.
@@ -50,22 +56,25 @@ into twenty endlessly-scrollable home categories:
 ## Building
 
 CI builds automatically on push (`.cs3` + `plugins.json` land on the `builds`
-branch). To build locally you need JDK 17 + Android SDK + Gradle 8.10+:
+branch). To build locally you need JDK 17 + Android SDK:
 
 ```bash
-gradle make makePluginsJson
+./gradlew make makePluginsJson
 # output: VDrama/build/VDrama.cs3
 ```
 
-> No `gradle-wrapper.jar` is committed (text-only repo) — run `gradle wrapper`
-> once or let Android Studio generate it, or use any Gradle ≥ 8.9 directly.
-
 ## Installing in CloudStream
 
-1. Fork this repo (so Actions builds the `builds` branch under your account).
-2. In CloudStream: Settings → Extensions → Add repository:
-   `https://raw.githubusercontent.com/<you>/vdrama-cloudstream/builds/plugins.json`
-3. Install **VDrama** from your repo.
+**One-tap (Android):**
+[cloudstreamrepo://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json](cloudstreamrepo://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json)
+
+Or manually — Settings → Extensions → Add repository → paste:
+
+```
+https://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json
+```
+
+Then install **VDrama** from the repository.
 
 ## Testing
 
