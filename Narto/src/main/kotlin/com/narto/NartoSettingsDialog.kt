@@ -16,12 +16,22 @@ object NartoSettingsDialog {
 
     fun show(context: Context, currentBaseUrl: String) {
         val pad = (20 * context.resources.displayMetrics.density).toInt()
+
         val input = EditText(context).apply {
             hint = "Leave empty for $DEFAULT_BASE_URL"
             setText(NartoStore.loadBase() ?: "")
             isSingleLine = true
             setSelectAllOnFocus(true)
         }
+
+        val cfButton = TextView(context).apply {
+            text = "🛡️ Solve Cloudflare for this domain"
+            setTextColor(Color.parseColor("#0d6efd"))
+            textSize = 14f
+            setPadding(0, pad/2, 0, pad/2)
+            setOnClickListener { showCloudflareWebView(context, currentBaseUrl) }
+        }
+
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad/2, pad, 0)
@@ -36,6 +46,7 @@ object NartoSettingsDialog {
                 textSize = 12f
                 setTextColor(Color.DKGRAY)
             })
+            addView(cfButton)
         }
 
         AlertDialog.Builder(context)
@@ -44,15 +55,7 @@ object NartoSettingsDialog {
             .setPositiveButton("Save") { _, _ -> applyDomain(input.text?.toString()) }
             .setNeutralButton("Use default") { _, _ -> applyDomain("") }
             .setNegativeButton("Cancel", null)
-            .setNeutralButton("🛡️ Cloudflare") { _, _ -> showCloudflareWebView(context, currentBaseUrl) }
             .show()
-        // Android AlertDialog only allows 3 buttons; we need to handle 4 actions.
-        // Workaround: after show, add extra button via dialog.getButton
-        // For simplicity, we repurpose neutral as Cloudflare and add "Use default" as extra view.
-        // Instead, show Cloudflare as separate dialog after Save/Cancel: we add a small extra button in the layout.
-        // Simpler: Add a TextView button inside root that opens WebView.
-        // Patch: add clickable TextView for Cloudflare
-        // (kept minimal — ponytail: one extra view, no custom layout file)
     }
 
     fun applyDomain(raw: String?): String {
@@ -69,7 +72,6 @@ object NartoSettingsDialog {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, finishedUrl: String?) {
                     super.onPageFinished(view, finishedUrl)
-                    // auto-save cookies when Cloudflare challenge passes (no "Just a moment" in title)
                     val title = view?.title ?: ""
                     if (!title.contains("Just a moment", true) && !title.contains("challenge", true)) {
                         val cookies = CookieManager.getInstance().getCookie(finishedUrl ?: url) ?: ""
@@ -88,7 +90,7 @@ object NartoSettingsDialog {
         webView.loadUrl(url)
 
         val dialog = AlertDialog.Builder(context)
-            .setTitle("Solve Cloudflare — complete then tap Save")
+            .setTitle("Solve Cloudflare — complete then Save")
             .setView(webView)
             .setPositiveButton("Save Cookies") { _, _ ->
                 val currentUrl = webView.url ?: url
@@ -102,13 +104,12 @@ object NartoSettingsDialog {
                         Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(context, "No cookies found — try waiting for page to load", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "No cookies found — wait for page to load", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Close", null)
             .create()
         dialog.show()
-        // make WebView fill dialog
-        webView.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 800)
+        webView.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 900)
     }
 }
