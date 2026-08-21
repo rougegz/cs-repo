@@ -68,7 +68,11 @@ fun browserHeaders(): Map<String, String> = mapOf(
 
 object ChartStore {
     private const val PREFS = "chartdrama_prefs"
-    private const val KEY_BASE = "base_url_override"
+    private const val KEY_DOMAIN_1 = "chartdrama_domain_1"
+    private const val KEY_DOMAIN_2 = "chartdrama_domain_2"
+    private const val KEY_DOMAIN_3 = "chartdrama_domain_3"
+    private const val KEY_ACTIVE = "chartdrama_active"
+    private const val KEY_BASE_LEGACY = "base_url_override"
     private const val KEY_CF_PREFIX = "cf_cookie_"
 
     @Volatile private var prefs: SharedPreferences? = null
@@ -79,50 +83,97 @@ object ChartStore {
         }
     }
 
-    fun loadBase(): String? = prefs?.getString(KEY_BASE, null)?.takeIf { it.isNotBlank() }
+    fun loadDomain(index: Int): String? = prefs?.getString(
+        when (index) {
+            1 -> KEY_DOMAIN_1
+            2 -> KEY_DOMAIN_2
+            3 -> KEY_DOMAIN_3
+            else -> return null
+        }, null
+    )?.takeIf { it.isNotBlank() }
+
+    fun saveDomain(index: Int, url: String?) {
+        val key = when (index) {
+            1 -> KEY_DOMAIN_1
+            2 -> KEY_DOMAIN_2
+            3 -> KEY_DOMAIN_3
+            else -> return
+        }
+        val e = prefs?.edit() ?: return
+        val norm = normalizeBaseUrl(url)
+        if (norm.isNullOrBlank()) e.remove(key) else e.putString(key, norm)
+        e.apply()
+    }
+
+    fun loadActive(): Int = prefs?.getInt(KEY_ACTIVE, 1)?.coerceIn(1, 3) ?: 1
+
+    fun saveActive(index: Int) {
+        prefs?.edit()?.putInt(KEY_ACTIVE, index.coerceIn(1, 3))?.apply()
+    }
+
+    fun activeBase(): String? {
+        val idx = loadActive()
+        return loadDomain(idx)?.let { normalizeBaseUrl(it) } ?: loadBaseLegacy()?.let { normalizeBaseUrl(it) }
+    }
+
+    private fun loadBaseLegacy(): String? = prefs?.getString(KEY_BASE_LEGACY, null)?.takeIf { it.isNotBlank() }
+
+    fun loadBase(): String? = activeBase() ?: loadBaseLegacy()
 
     fun saveBase(url: String?) {
+        val idx = loadActive()
+        saveDomain(idx, url)
         val e = prefs?.edit() ?: return
-        if (url.isNullOrBlank()) e.remove(KEY_BASE) else e.putString(KEY_BASE, url)
+        val norm = normalizeBaseUrl(url)
+        if (norm.isNullOrBlank()) e.remove(KEY_BASE_LEGACY) else e.putString(KEY_BASE_LEGACY, norm)
         e.apply()
     }
 
     fun saveCfCookie(domain: String, cookie: String) {
-        prefs?.edit()?.putString(KEY_CF_PREFIX + domain, cookie)?.apply()
-        // Also push to WebView cookie store so future WebViews are pre-solved
-        try { CookieManager.getInstance().setCookie("https://$domain", cookie) } catch (_: Exception) {}
+        val clean = domain.removePrefix("https://").removePrefix("http://").substringBefore('/').substringBefore(':').removePrefix("www.")
+        val host = if (clean.isBlank()) domain else clean
+        prefs?.edit()?.putString(KEY_CF_PREFIX + host, cookie)?.apply()
+        if (host != "chartdrama.com") {
+            prefs?.edit()?.putString(KEY_CF_PREFIX + "chartdrama.com", cookie)?.apply()
+        }
+        try { CookieManager.getInstance().setCookie("https://" + host, cookie) } catch (_: Exception) {}
+        try { CookieManager.getInstance().setCookie("https://www." + host, cookie) } catch (_: Exception) {}
+        try { CookieManager.getInstance().setCookie("https://chartdrama.com", cookie) } catch (_: Exception) {}
     }
 
-    fun loadCfCookie(domain: String): String? = prefs?.getString(KEY_CF_PREFIX + domain, null)
+    fun loadCfCookie(domain: String): String? {
+        val clean = domain.removePrefix("https://").removePrefix("http://").substringBefore('/').substringBefore(':')
+        return prefs?.getString(KEY_CF_PREFIX + clean, null)
+            ?: prefs?.getString(KEY_CF_PREFIX + clean.removePrefix("www."), null)
+            ?: prefs?.getString(KEY_CF_PREFIX + "chartdrama.com", null)
+            ?: prefs?.getString("cf_cookie_chartdrama.com", null)
+    }
 
     fun cfHeadersFor(url: String): Map<String, String> {
         val host = try { java.net.URL(url).host } catch (_: Exception) { return emptyMap() }
-        val cookie = loadCfCookie(host) ?: loadCfCookie(host.removePrefix("www.")) ?: return emptyMap()
+        val cookie = loadCfCookie(host) ?: loadCfCookie(host.removePrefix("www.")) ?: prefs?.getString(KEY_CF_PREFIX + "chartdrama.com", null) ?: return emptyMap()
         return mapOf("Cookie" to cookie)
     }
+
+    fun hasCfCookie(): Boolean = !loadCfCookie("chartdrama.com").isNullOrBlank() || !loadCfCookie("www.chartdrama.com").isNullOrBlank()
+
+    fun getCfCookieForStatus(): String? = loadCfCookie("chartdrama.com") ?: loadCfCookie("www.chartdrama.com")
 }
 
 fun normalizeBaseUrl(input: String?): String? {
     val t = input?.trim()?.trimEnd('/') ?: return null
     if (t.isEmpty()) return null
-    return if (t.startsWith("http://") || t.startsWith("https://")) t else "https://$t"
+    return if (t.startsWith("http://") || t.startsWith("https://")) t else "https://" + t
 }
 
-/** Turn https://www.chartdrama.com + slug into https://slug.chartdrama.com  (handles mirrors like https://mirror.example.com) */
 fun subdomainBase(base: String, slug: String): String {
     val norm = normalizeBaseUrl(base) ?: DEFAULT_BASE_URL
-    // strip scheme
     val withoutScheme = norm.removePrefix("https://").removePrefix("http://")
-    // strip www. if present
     val host = withoutScheme.removePrefix("www.").substringBefore('/').substringBefore(':')
-    return "https://$slug.$host"
+    return "https://" + slug + "." + host
 }
 
-/** For host-agnostic parsing, chartdrama drama urls are /d/{slug} where slug is like 6a469b.../title */
 fun parseChartUrl(url: String): Pair<String, String>? {
-    // url is like https://reelshort.chartdrama.com/d/6a469b12d3f5c65f7f095b8a/you-ve-been-replaced-first-love?dramaId=77246
-    // or https://reelshort.chartdrama.com/d/6a469b12d3f5c65f7f095b8a/you-ve-been-replaced-first-love
-    // We need to extract the encoded slug and dramaId if present in query
     val qIdx = url.indexOf('?')
     val pathPart = if (qIdx == -1) url else url.substring(0, qIdx)
     val marker = "/d/"
@@ -130,7 +181,6 @@ fun parseChartUrl(url: String): Pair<String, String>? {
     if (idx == -1) return null
     val slug = pathPart.substring(idx + marker.length).trimEnd('/')
     if (slug.isEmpty()) return null
-    // Try to get dramaId from query
     val dramaId = url.substringAfter("dramaId=", "").substringBefore("&").takeIf { it.isNotEmpty() }
     return slug to (dramaId ?: "")
 }
