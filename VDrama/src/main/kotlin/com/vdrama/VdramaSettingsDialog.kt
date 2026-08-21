@@ -23,7 +23,7 @@ object VdramaSettingsDialog {
         val input = EditText(context).apply {
             hint = "Leave empty for $DEFAULT_BASE_URL"
             setText(VdramaStore.loadOverride() ?: "")
-            singleLine = true
+            isSingleLine = true
             setSelectAllOnFocus(true)
         }
 
