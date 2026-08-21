@@ -30,19 +30,19 @@ class DramaFrenProvider : MainAPI() {
     private fun api(): String = DramaFrenStore.base()
 
     private fun homeApiUrl(provider: String, page: Int): String =
-        "$api()/api/home?offset=$page&lang=en&provider=${java.net.URLEncoder.encode(provider, "UTF-8")}"
+        "${api()}/api/home?offset=$page&lang=en&provider=${java.net.URLEncoder.encode(provider, "UTF-8")}"
 
     private fun detailApiUrl(provider: String, id: String): String =
-        "$api()/api/detail?provider=${java.net.URLEncoder.encode(provider, "UTF-8")}" +
+        "${api()}/api/detail?provider=${java.net.URLEncoder.encode(provider, "UTF-8")}" +
             "&id=${java.net.URLEncoder.encode(id, "UTF-8")}&lang=en"
 
     private fun videoApiUrl(provider: String, id: String, ep: Int): String =
-        "$api()/api/video?provider=${java.net.URLEncoder.encode(provider, "UTF-8")}" +
+        "${api()}/api/video?provider=${java.net.URLEncoder.encode(provider, "UTF-8")}" +
             "&id=${java.net.URLEncoder.encode(id, "UTF-8")}&ep=$ep&lang=en&server=1&cv=v21"
 
     private fun cfHeaders(url: String): Map<String, String> {
         val base = browserHeaders().toMutableMap()
-        base["Referer"] = "$api()/"
+        base["Referer"] = "${api()}/"
         DramaFrenStore.getCfCookieForUrl(url)?.let { ck -> base["Cookie"] = ck }
         return base
     }
@@ -102,7 +102,6 @@ class DramaFrenProvider : MainAPI() {
             val providerSlug = it.provider ?: request.data
             newMovieSearchResponse(it.title!!, dramaUrl(providerSlug, it.id!!), TvType.AsianDrama) {
                 this.posterUrl = it.cover
-                this.otherName = it.intro?.take(60)
             }
         }
         val first = cards.first().url
@@ -112,12 +111,12 @@ class DramaFrenProvider : MainAPI() {
     }
 
     private fun dramaUrl(provider: String, id: String): String =
-        "$api()/drama/$provider/$id-x?lang=en"
+        "${api()}/drama/$provider/$id-x?lang=en"
 
     // ---- Search (HTML page) ----
     override suspend fun search(query: String, page: Int): SearchResponseList {
         if (page > 1 || query.isBlank()) return newSearchResponseList(emptyList(), false)
-        val url = "$api()/search?lang=en&q=${java.net.URLEncoder.encode(query, "UTF-8")}"
+        val url = "${api()}/search?lang=en&q=${java.net.URLEncoder.encode(query, "UTF-8")}"
         val html = app.get(url, headers = cfHeaders(url), timeout = 30L, cacheTime = 10).text
         if (isCloudflare(html)) return newSearchResponseList(emptyList(), false)
         val doc = Jsoup.parse(html, api())
@@ -189,7 +188,7 @@ class DramaFrenProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
-        val res = app.get(data, headers = cfHeaders(api()), referer = "$api()/", timeout = 30L, cacheTime = 0)
+        val res = app.get(data, headers = cfHeaders(api()), referer = "${api()}/", timeout = 30L, cacheTime = 0)
         val parsed = runCatching { res.parsedSafe<VideoResponse>() }.getOrNull()
             ?: return false
         if (parsed.locked == true) return false
@@ -201,7 +200,7 @@ class DramaFrenProvider : MainAPI() {
         for (q in sources) {
             val link = q.url!!
             callback(newExtractorLink(name, q.label ?: name, link) {
-                this.referer = "$api()/"
+                this.referer = "${api()}/"
                 this.quality = qualityFrom(q.label, link)
                 this.type = if (link.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             })

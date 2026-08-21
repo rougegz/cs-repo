@@ -11,7 +11,7 @@ class ChartDramaPlugin : Plugin() {
 
     override fun load(context: Context) {
         ChartStore.init(context)
-        provider.mainUrl = ChartStore.activeBase()
+        provider.mainUrl = ChartStore.activeBase() ?: DEFAULT_BASE_URL
         registerMainAPI(provider)
 
         openSettings = { ctx ->
@@ -19,7 +19,7 @@ class ChartDramaPlugin : Plugin() {
         }
 
         ChartDramaSettingsDialog.onDomainChanged = {
-            provider.mainUrl = ChartStore.activeBase()
+            provider.mainUrl = ChartStore.activeBase() ?: DEFAULT_BASE_URL
             runCatching { MainActivity.reloadHomeEvent.invoke(true) }
         }
     }
