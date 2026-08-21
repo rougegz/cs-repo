@@ -33,11 +33,34 @@ class NartoProvider : MainAPI() {
     private fun searchUrl(query: String): String =
         "$mainUrl/search?lang=en-US&q=${java.net.URLEncoder.encode(query, "UTF-8")}"
 
+
+    private val fallbackBase = "https://narto-drama.com"
+
+    /** Extract (title, url, poster) triples from the site's JSON-LD ItemList. */
+    private fun parseJsonLdItems(html: String): List<Triple<String, String, String?>> {
+        val regex = Regex(
+            """"url":"(https://narto-drama\.com/detail/watch/[^"]+)","name":"([^"]+)","image":"([^"]*)""""
+        )
+        return regex.findAll(html).map { m ->
+            val img = m.groupValues[3].takeIf { it.isNotBlank() }?.let {
+                if (it.startsWith("http")) it else fallbackBase + it
+            }
+            // normalize language to English regardless of what the site served
+            val url = m.groupValues[1].replace(Regex("lang=[a-zA-Z-]+"), "lang=en-US")
+            Triple(m.groupValues[2], url, img)
+        }.toList()
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (page > 1) return newHomePageResponse(request, emptyList(), hasNext = false)
-        val url = sectionsUrl(request.data)
-        val headers = NartoStore.injectCfCookies(url, nartoHeaders())
-        val json = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 20L, cacheTime = 15).parsedSafe<SectionsResponse>()
+        // Primary: JSON API (fast when up). Fallback: scrape main site's embedded
+        // JSON-LD ItemList — the API host has outages where HTML still works.
+        val apiUrl = sectionsUrl(request.data)
+        val apiHeaders = NartoStore.injectCfCookies(apiUrl, nartoHeaders())
+        val json = runCatching {
+            app.get(apiUrl, headers = apiHeaders, referer = "$mainUrl/", timeout = 12L, cacheTime = 15)
+                .parsedSafe<SectionsResponse>()
+        }.getOrNull()
         val items = json?.sections?.flatMap { sec ->
             sec.items.mapNotNull { item ->
                 val title = item.title?.trim() ?: return@mapNotNull null
@@ -52,8 +75,19 @@ class NartoProvider : MainAPI() {
             }
         }?.distinctBy { it.url } ?: emptyList()
 
-        // Single-shot: site returns everything at once, no server pagination.
-        return newHomePageResponse(request, items, hasNext = false)
+        if (items.isNotEmpty()) {
+            // Single-shot: site returns everything at once, no server pagination.
+            return newHomePageResponse(request, items, hasNext = false)
+        }
+
+        // Fallback: main-site HTML with embedded JSON-LD ItemList
+        val html = runCatching {
+            app.get("$fallbackBase/?lang=en-US", headers = nartoHtmlHeaders(), timeout = 20L, cacheTime = 15).text
+        }.getOrNull() ?: return newHomePageResponse(request, emptyList(), hasNext = false)
+        val fbItems = parseJsonLdItems(html).map { (title, url, poster) ->
+            newMovieSearchResponse(title, url, TvType.AsianDrama) { this.posterUrl = poster }
+        }
+        return newHomePageResponse(request, fbItems, hasNext = false)
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

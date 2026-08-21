@@ -52,6 +52,13 @@ fun nartoHeaders(): Map<String, String> = mapOf(
     "X-Requested-With" to "XMLHttpRequest",
 )
 
+/** HTML headers (no X-Requested-With — that makes the site return JSON). */
+fun nartoHtmlHeaders(): Map<String, String> = mapOf(
+    "User-Agent" to "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
+    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language" to "en-US,en;q=0.9",
+)
+
 object NartoStore {
     private const val PREFS = "narto_prefs"
     private const val KEY_BASE = "base_url_override"

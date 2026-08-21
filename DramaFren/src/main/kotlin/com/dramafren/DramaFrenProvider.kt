@@ -23,9 +23,33 @@ class DramaFrenProvider : MainAPI() {
     override var sequentialMainPage = true
     override var sequentialMainPageDelay = 250L
 
-    override val mainPage = mainPageOf(
-        *DRAMAFREN_CATALOG.map { (title, slug) -> slug to title }.toTypedArray()
-    )
+    /**
+     * Home rows: one per provider, plus genre sub-rows for providers that have
+     * verified genre tabs (mixed across apps so the home page feels varied).
+     */
+    override val mainPage: List<MainPageData> by lazy {
+        val rows = mutableListOf<MainPageData>()
+        // interleaved genre rows first (3 per available genre provider)
+        val genreByProvider = PROVIDER_GENRES.keys.groupBy { it.substringBefore('|') }
+        val addedGenres = mutableSetOf<String>()
+        DRAMAFREN_CATALOG.forEach { (title, slug) ->
+            rows += MainPageData(slug, title)
+            genreByProvider[slug]?.sorted()?.take(3)?.forEach { key ->
+                val genreName = key.substringAfter('|')
+                if (addedGenres.add(key)) {
+                    rows += MainPageData("genre:$key", "$title — $genreName")
+                }
+            }
+        }
+        rows
+    }
+
+    private fun genreHomeUrl(key: String, page: Int): String {
+        val (provider, genreName) = key.split("|", limit = 2).let { it[0] to it[1] }
+        val categoryId = PROVIDER_GENRES[key] ?: return homeApiUrl(provider, page)
+        return "${api()}/api/home?offset=$page&lang=en&provider=${java.net.URLEncoder.encode(provider, "UTF-8")}" +
+            "&category=${java.net.URLEncoder.encode(categoryId, "UTF-8")}"
+    }
 
     private fun api(): String = DramaFrenStore.base()
 
@@ -100,14 +124,17 @@ class DramaFrenProvider : MainAPI() {
 
     // ---- Home (endless via offset) ----
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val url = if (request.data.startsWith("genre:")) genreHomeUrl(request.data.removePrefix("genre:"), page)
+                  else homeApiUrl(request.data, page)
         // API offsets are 1-based pages of ~18 items
-        val res = app.get(homeApiUrl(request.data, page), headers = cfHeaders(api()), timeout = 30L, cacheTime = if (page == 1) 5 else 10)
+        val res = app.get(url, headers = cfHeaders(api()), timeout = 30L, cacheTime = if (page == 1) 5 else 10)
         val parsed = runCatching { res.parsedSafe<HomeResponse>() }.getOrNull()
         val items = parsed?.data.orEmpty().filter { !it.id.isNullOrBlank() && !it.title.isNullOrBlank() }
         if (items.isEmpty()) return newHomePageResponse(request, emptyList(), hasNext = false)
 
+        val defaultProvider = request.data.removePrefix("genre:").substringBefore('|')
         val cards = items.map { it ->
-            val providerSlug = it.provider ?: request.data
+            val providerSlug = it.provider ?: defaultProvider
             newMovieSearchResponse(it.title!!, dramaUrl(providerSlug, it.id!!), TvType.AsianDrama) {
                 this.posterUrl = it.cover
             }
