@@ -143,56 +143,59 @@ async function main() {
     await new Promise((r) => setTimeout(r, 180));
   }
 
-  console.log("\n== live: pagination (melolo) ==");
+  console.log("\n== live: pagination via /api/home offset ==");
   try {
-    const p1 = parseCards(await getText(exploreUrl(base, "melolo", 1)), base);
-    const p2 = parseCards(await getText(exploreUrl(base, "melolo", 2)), base);
-    check("melolo p1 has cards", p1.length > 0);
-    check("melolo p2 fetched", true, `p1=${p1.length} p2=${p2.length}`);
-    if (p1[0] && p2[0])
-      check(
-        "p1 vs p2 first link",
-        p1[0].link !== p2[0].link,
-        `${p1[0].link} vs ${p2[0].link}`,
-      );
+    const j1 = JSON.parse(
+      await getText(`${base}/api/home?offset=1&lang=en&provider=melolo`),
+    );
+    const j2 = JSON.parse(
+      await getText(`${base}/api/home?offset=2&lang=en&provider=melolo`),
+    );
+    check(
+      "api home offset=1 items",
+      Array.isArray(j1.data) && j1.data.length > 0,
+      `got ${j1.data?.length}`,
+    );
+    check(
+      "api home offset=2 differs",
+      j1.data[0].id !== j2.data[0].id,
+      `${j1.data[0].id} vs ${j2.data[0].id}`,
+    );
+    check("items have title+cover", !!j1.data[0].title && !!j1.data[0].cover);
   } catch (e) {
-    check("melolo pagination", false, e.message);
+    check("api pagination", false, e.message);
   }
 
-  console.log("\n== live: detail + watch ==");
+  console.log("\n== live: detail + video API ==");
   try {
-    const html = await getText(exploreUrl(base, "melolo", 1));
-    const cards = parseCards(html, base);
-    const first = cards[0];
-    check("first drama link exists", !!first);
-    if (first) {
-      const detail = await getText(first.link);
-      check(
-        "detail page loads",
-        detail.includes("EP") || detail.includes("Episode"),
-      );
-      const watchUrl = detail.match(/href="(\/watch\/[^"]+)"/)?.[1];
-      if (watchUrl) {
-        const absWatch = watchUrl.startsWith("http")
-          ? watchUrl
-          : base + watchUrl;
-        const watchHtml = await getText(absWatch);
-        check("watch page loads", watchHtml.length > 1000);
-        const hasVideo =
-          watchHtml.includes("m3u8") ||
-          watchHtml.includes(".mp4") ||
-          watchHtml.includes("video");
-        check(
-          "watch has video hint",
-          hasVideo,
-          hasVideo ? "found m3u8/mp4" : "no m3u8 in html (may be JS-loaded)",
-        );
-      } else {
-        check("watch link found", false, "no /watch/ href in detail");
-      }
-    }
+    const d = JSON.parse(
+      await getText(
+        `${base}/api/detail?provider=melolo&id=7512710469950376976&lang=en`,
+      ),
+    );
+    check("detail title", !!d.title, d.title);
+    check(
+      "detail episodes count",
+      (d.episodes || 0) > 0,
+      `episodes=${d.episodes}`,
+    );
+    const v = JSON.parse(
+      await getText(
+        `${base}/api/video?provider=melolo&id=7512710469950376976&ep=1&lang=en&server=1&cv=v21`,
+      ),
+    );
+    check(
+      "video url present",
+      typeof v.videoUrl === "string" && v.videoUrl.startsWith("http"),
+      v.videoUrl?.slice(0, 60),
+    );
+    check("not locked", v.locked === false);
+    check(
+      "qualityList or single url",
+      Array.isArray(v.qualityList) ? v.qualityList.length > 0 : !!v.videoUrl,
+    );
   } catch (e) {
-    check("detail+watch", false, e.message);
+    check("detail+video api", false, e.message);
   }
 
   console.log("\n== live: search ==");

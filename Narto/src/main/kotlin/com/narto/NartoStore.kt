@@ -55,6 +55,10 @@ fun nartoHeaders(): Map<String, String> = mapOf(
 object NartoStore {
     private const val PREFS = "narto_prefs"
     private const val KEY_BASE = "base_url_override"
+    private const val KEY_D1 = "domain_1"
+    private const val KEY_D2 = "domain_2"
+    private const val KEY_D3 = "domain_3"
+    private const val KEY_ACTIVE = "active_domain"
     private const val KEY_CF_PREFIX = "cf_cookie_"
 
     @Volatile private var prefs: SharedPreferences? = null
@@ -65,6 +69,33 @@ object NartoStore {
         }
     }
 
+    // 3-domain support
+    fun getDomains(): List<String> {
+        val legacy = loadBase()
+        val d1 = normalizeNartoBase(prefs?.getString(KEY_D1, null)) ?: legacy ?: DEFAULT_BASE_URL
+        val d2 = normalizeNartoBase(prefs?.getString(KEY_D2, null)) ?: ""
+        val d3 = normalizeNartoBase(prefs?.getString(KEY_D3, null)) ?: ""
+        return listOf(d1, d2, d3)
+    }
+
+    fun getActiveIndex(): Int = (prefs?.getInt(KEY_ACTIVE, 0) ?: 0).coerceIn(0, 2)
+    fun setActiveIndex(i: Int) { prefs?.edit()?.putInt(KEY_ACTIVE, i.coerceIn(0,2))?.apply() }
+
+    fun saveDomain(idx: Int, raw: String?) {
+        val key = when(idx){0->KEY_D1;1->KEY_D2;else->KEY_D3}
+        val n = normalizeNartoBase(raw)
+        val e = prefs?.edit() ?: return
+        if (n.isNullOrBlank()) {
+            if (idx==0) e.putString(key, DEFAULT_BASE_URL) else e.remove(key)
+        } else e.putString(key, n)
+        e.apply()
+    }
+
+    fun activeBase(): String {
+        val idx = getActiveIndex()
+        return getDomains().getOrNull(idx)?.takeIf { it.isNotBlank() } ?: DEFAULT_BASE_URL
+    }
+
     fun loadBase(): String? = prefs?.getString(KEY_BASE, null)?.takeIf { it.isNotBlank() }
     fun saveBase(url: String?) {
         val e = prefs?.edit() ?: return
@@ -72,8 +103,16 @@ object NartoStore {
         e.apply()
     }
 
-    fun saveCfCookie(domain: String, cookie: String) {
+    fun saveCfCookie(urlOrDomain: String, cookie: String) {
+        val domain = if (urlOrDomain.contains("://")) {
+            try { java.net.URL(urlOrDomain).host } catch (_: Exception) { urlOrDomain }
+        } else urlOrDomain
         prefs?.edit()?.putString(KEY_CF_PREFIX + domain, cookie)?.apply()
+    }
+
+    fun loadCfCookie(): String? {
+        val host = try { java.net.URL(activeBase()).host } catch (_: Exception) { return null }
+        return loadCfCookie(host)
     }
 
     fun loadCfCookie(domain: String): String? = prefs?.getString(KEY_CF_PREFIX + domain, null)

@@ -40,7 +40,7 @@ const CATALOG = [
   ["Pinedrama", "hoshiyomi-pinedrama"],
   ["ShortMax", "hoshiyomi-shortmax"],
   ["DramaBite", "hoshiyomi-dramabite"],
-  ["Flareflow", "hoshiyomi-flareflow"],
+  ["FlickReels", "hoshiyomi-flickreels"],
   ["WeTV", "hoshiyomi-wetv"],
   ["iQIYI", "hoshiyomi-iqiyi"],
   ["DramaNova", "hoshiyomi-dramanova"],

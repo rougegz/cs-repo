@@ -68,8 +68,10 @@ fun browserHeaders(): Map<String, String> = mapOf(
 
 object DramaFrenStore {
     private const val PREFS = "dramafren_prefs"
-    private const val KEY_API_OVERRIDE = "api_base_override"
-    private const val KEY_REEL_OVERRIDE = "reel_base_override"
+    private const val KEY_DOMAIN_1 = "domain_1"
+    private const val KEY_DOMAIN_2 = "domain_2"
+    private const val KEY_DOMAIN_3 = "domain_3"
+    private const val KEY_ACTIVE = "active_domain"
     private const val KEY_CF_PREFIX = "cf_cookie_"
 
     @Volatile private var prefs: SharedPreferences? = null
@@ -80,25 +82,46 @@ object DramaFrenStore {
         }
     }
 
-    fun apiBase(): String = normalizeBaseUrl(prefs?.getString(KEY_API_OVERRIDE, null)) ?: DEFAULT_API_BASE
-    fun reelBase(): String = normalizeBaseUrl(prefs?.getString(KEY_REEL_OVERRIDE, null)) ?: DEFAULT_REEL_BASE
-    fun base(): String = apiBase()
+    // 3-domain handling — production level
+    fun getDomains(): List<String> {
+        val d1 = normalizeBaseUrl(prefs?.getString(KEY_DOMAIN_1, null)) ?: DEFAULT_API_BASE
+        val d2 = normalizeBaseUrl(prefs?.getString(KEY_DOMAIN_2, null)) ?: DEFAULT_REEL_BASE
+        val d3 = normalizeBaseUrl(prefs?.getString(KEY_DOMAIN_3, null)) ?: ""
+        return listOf(d1, d2, d3)
+    }
 
-    fun saveApiBase(raw: String?) {
+    fun getActiveIndex(): Int = prefs?.getInt(KEY_ACTIVE, 0) ?: 0
+
+    fun setActiveIndex(index: Int) {
+        prefs?.edit()?.putInt(KEY_ACTIVE, index.coerceIn(0, 2))?.apply()
+    }
+
+    fun saveDomain(index: Int, raw: String?) {
+        val key = when(index) { 0->KEY_DOMAIN_1; 1->KEY_DOMAIN_2; else->KEY_DOMAIN_3 }
         val n = normalizeBaseUrl(raw)
         val e = prefs?.edit() ?: return
-        if (n == null) e.remove(KEY_API_OVERRIDE) else e.putString(KEY_API_OVERRIDE, n)
+        if (n.isNullOrBlank()) {
+            if (index==2) e.remove(key) else e.putString(key, if(index==0) DEFAULT_API_BASE else DEFAULT_REEL_BASE)
+        } else e.putString(key, n)
         e.apply()
     }
-    fun saveReelBase(raw: String?) {
-        val n = normalizeBaseUrl(raw)
-        val e = prefs?.edit() ?: return
-        if (n == null) e.remove(KEY_REEL_OVERRIDE) else e.putString(KEY_REEL_OVERRIDE, n)
-        e.apply()
-    }
-    fun loadApiOverride(): String? = prefs?.getString(KEY_API_OVERRIDE, null)?.takeIf { it.isNotBlank() }
-    fun loadReelOverride(): String? = prefs?.getString(KEY_REEL_OVERRIDE, null)?.takeIf { it.isNotBlank() }
 
+    fun base(): String {
+        val idx = getActiveIndex()
+        val domains = getDomains()
+        val chosen = domains.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: DEFAULT_API_BASE
+        return chosen
+    }
+
+    // Backwards compat for old keys
+    fun apiBase(): String = getDomains()[0].takeIf { it.isNotBlank() } ?: DEFAULT_API_BASE
+    fun reelBase(): String = getDomains()[1].takeIf { it.isNotBlank() } ?: DEFAULT_REEL_BASE
+    fun loadApiOverride(): String? = prefs?.getString(KEY_DOMAIN_1, null)?.takeIf { it.isNotBlank() }
+    fun loadReelOverride(): String? = prefs?.getString(KEY_DOMAIN_2, null)?.takeIf { it.isNotBlank() }
+    fun saveApiBase(raw: String?) = saveDomain(0, raw)
+    fun saveReelBase(raw: String?) = saveDomain(1, raw)
+
+    // Cloudflare
     fun saveCfCookie(url: String, cookie: String) {
         val host = runCatching { java.net.URL(url).host }.getOrNull() ?: return
         prefs?.edit()?.putString(KEY_CF_PREFIX + host, cookie)?.apply()

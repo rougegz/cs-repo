@@ -24,19 +24,18 @@ class NartoProvider : MainAPI() {
         *NARTO_CATALOG.map { (label, key) -> key to label }.toTypedArray()
     )
 
-    private fun sectionsUrl(provider: String, page: Int): String {
-        // combine For You + Feed into one endless list; narto uses tab_pages[for-you] and tab_pages[feed-stream]
+    private fun sectionsUrl(provider: String): String {
+        // Site returns ALL sections in one call (no server pagination) — verified live.
         return "$mainUrl/home/providers/sections?provider=$provider&lang=en-US&target_lang=en-US" +
-            "&only_tab=for-you&tab_pages[for-you]=$page&tab_pages[feed-stream]=$page&_cb=${System.currentTimeMillis()}"
+            "&_cb=${System.currentTimeMillis()}"
     }
 
     private fun searchUrl(query: String): String =
         "$mainUrl/search?lang=en-US&q=${java.net.URLEncoder.encode(query, "UTF-8")}"
 
-    private val lastFirst = java.util.concurrent.ConcurrentHashMap<String, String>()
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = sectionsUrl(request.data, page)
+        if (page > 1) return newHomePageResponse(request, emptyList(), hasNext = false)
+        val url = sectionsUrl(request.data)
         val headers = NartoStore.injectCfCookies(url, nartoHeaders())
         val json = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 30L, cacheTime = 5).parsedSafe<SectionsResponse>()
         val items = json?.sections?.flatMap { sec ->
@@ -44,6 +43,8 @@ class NartoProvider : MainAPI() {
                 val title = item.title?.trim() ?: return@mapNotNull null
                 val watch = item.watch_url?.trim() ?: return@mapNotNull null
                 val poster = item.poster_url?.trim() ?: ""
+                // Category headers ("Popular") have no poster — skip them.
+                if (poster.isEmpty()) return@mapNotNull null
                 // watch_url is already absolute, contains provider & book_id
                 newMovieSearchResponse(title, watch, TvType.AsianDrama) {
                     this.posterUrl = poster
@@ -51,11 +52,8 @@ class NartoProvider : MainAPI() {
             }
         }?.distinctBy { it.url } ?: emptyList()
 
-        if (items.isEmpty()) return newHomePageResponse(request, emptyList(), hasNext = false)
-        val first = items.first().url
-        val prev = lastFirst.put(request.data, first)
-        if (prev == first && page > 1) return newHomePageResponse(request, emptyList(), hasNext = false)
-        return newHomePageResponse(request, items, hasNext = true)
+        // Single-shot: site returns everything at once, no server pagination.
+        return newHomePageResponse(request, items, hasNext = false)
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

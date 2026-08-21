@@ -11,7 +11,7 @@ class NartoPlugin : Plugin() {
 
     override fun load(context: Context) {
         NartoStore.init(context)
-        provider.mainUrl = normalizeNartoBase(NartoStore.loadBase()) ?: DEFAULT_BASE_URL
+        provider.mainUrl = NartoStore.activeBase()
         registerMainAPI(provider)
 
         openSettings = { ctx ->
@@ -19,7 +19,7 @@ class NartoPlugin : Plugin() {
         }
 
         NartoSettingsDialog.onDomainChanged = {
-            provider.mainUrl = normalizeNartoBase(NartoStore.loadBase()) ?: DEFAULT_BASE_URL
+            provider.mainUrl = NartoStore.activeBase()
             runCatching { MainActivity.reloadHomeEvent.invoke(true) }
         }
     }

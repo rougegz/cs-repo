@@ -6,9 +6,13 @@ import android.graphics.Color
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
@@ -16,102 +20,142 @@ object NartoSettingsDialog {
     var onDomainChanged: (() -> Unit)? = null
 
     fun show(context: Context, currentBaseUrl: String) {
-        val pad = (20 * context.resources.displayMetrics.density).toInt()
+        val pad = (16 * context.resources.displayMetrics.density).toInt()
+        val domains = NartoStore.getDomains()
+        val active = NartoStore.getActiveIndex()
 
-        val input = EditText(context).apply {
-            hint = "Leave empty for $DEFAULT_BASE_URL"
-            setText(NartoStore.loadBase() ?: "")
-            isSingleLine = true
-            setSelectAllOnFocus(true)
+        val inputs = List(3) { idx ->
+            EditText(context).apply {
+                hint = when(idx){
+                    0->"Domain 1 (default: $DEFAULT_BASE_URL)"
+                    1->"Domain 2 (mirror)"
+                    else->"Domain 3 (custom)"
+                }
+                setText(domains[idx])
+                isSingleLine = true
+                setSelectAllOnFocus(true)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 4 }
+            }
         }
 
-        val cfButton = TextView(context).apply {
-            text = "🛡️ Solve Cloudflare for this domain"
-            setTextColor(Color.parseColor("#0d6efd"))
-            textSize = 14f
-            setPadding(0, pad/2, 0, pad/2)
-            setOnClickListener { showCloudflareWebView(context, currentBaseUrl) }
+        val radioGroup = RadioGroup(context).apply {
+            orientation = RadioGroup.VERTICAL
+            for (i in 0..2) {
+                addView(RadioButton(context).apply {
+                    id = 4000 + i
+                    text = "Use Domain ${i+1}${if(i==active) " (active)" else ""}"
+                    isChecked = i==active
+                })
+            }
+            check(4000 + active)
         }
 
-        val root = LinearLayout(context).apply {
+        val cfStatus = TextView(context).apply {
+            val hasCf = NartoStore.loadCfCookie() != null
+            text = if (hasCf) "✓ Cloudflare cookies saved" else "No Cloudflare cookies"
+            setTextColor(if(hasCf) Color.parseColor("#2E7D32") else Color.GRAY)
+            textSize = 12f
+        }
+
+        val cfBtn = Button(context).apply {
+            text = "🛡️ Solve Cloudflare"
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 8 }
+            setOnClickListener {
+                val idx = radioGroup.checkedRadioButtonId - 4000
+                val chosen = inputs.getOrNull(idx)?.text?.toString()?.takeIf { it.isNotBlank() }?.let { normalizeNartoBase(it) } ?: domains[idx].takeIf { it.isNotBlank() } ?: currentBaseUrl
+                showCloudflareWebView(context, chosen)
+            }
+        }
+
+        val inner = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad/2, pad, 0)
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
             addView(TextView(context).apply {
                 text = "Current: $currentBaseUrl"
                 textSize = 13f
                 setTextColor(Color.GRAY)
             })
-            addView(input)
-            addView(TextView(context).apply {
-                text = "Mirror domain, e.g. https://mirror.example.com"
-                textSize = 12f
-                setTextColor(Color.DKGRAY)
-            })
-            addView(cfButton)
+            addView(TextView(context).apply { text = "Choose active domain:"; setTextColor(Color.DKGRAY); textSize = 12f; setPadding(0,12,0,4) })
+            addView(radioGroup)
+            for (i in 0..2) {
+                addView(TextView(context).apply { text = "Domain ${i+1}"; setTextColor(Color.DKGRAY); textSize = 11f })
+                addView(inputs[i])
+            }
+            addView(cfStatus)
+            addView(cfBtn)
         }
+
+        val scroll = ScrollView(context).apply {
+            addView(inner, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+        }
+        val root = FrameLayout(context).apply { addView(scroll) }
 
         AlertDialog.Builder(context)
             .setTitle("Narto Settings")
             .setView(root)
-            .setPositiveButton("Save") { _, _ -> applyDomain(input.text?.toString()) }
-            .setNeutralButton("Use default") { _, _ -> applyDomain("") }
+            .setPositiveButton("Save") { _, _ ->
+                for (i in 0..2) NartoStore.saveDomain(i, inputs[i].text?.toString())
+                NartoStore.setActiveIndex((radioGroup.checkedRadioButtonId - 4000).coerceIn(0,2))
+                onDomainChanged?.invoke()
+                Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Reset") { _, _ ->
+                for (i in 0..2) NartoStore.saveDomain(i, null)
+                NartoStore.setActiveIndex(0)
+                onDomainChanged?.invoke()
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    fun applyDomain(raw: String?): String {
-        val norm = normalizeNartoBase(raw)
-        NartoStore.saveBase(norm)
+    private fun applyDomain(raw: String?) {
+        NartoStore.saveDomain(NartoStore.getActiveIndex(), raw)
         onDomainChanged?.invoke()
-        return norm ?: DEFAULT_BASE_URL
     }
 
-    fun showCloudflareWebView(context: Context, url: String) {
+    private fun showCloudflareWebView(context: Context, target: String) {
         val webView = WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, finishedUrl: String?) {
-                    super.onPageFinished(view, finishedUrl)
-                    val title = view?.title ?: ""
-                    if (!title.contains("Just a moment", true) && !title.contains("challenge", true)) {
-                        val cookies = CookieManager.getInstance().getCookie(finishedUrl ?: url) ?: ""
-                        if (cookies.contains("cf_clearance") || cookies.contains("__cf")) {
-                            try {
-                                val host = java.net.URL(finishedUrl ?: url).host
-                                NartoStore.saveCfCookie(host, cookies)
-                                NartoStore.saveCfCookie(host.removePrefix("www."), cookies)
-                                Toast.makeText(context, "Cloudflare solved for $host", Toast.LENGTH_SHORT).show()
-                            } catch (_: Exception) {}
-                        }
-                    }
-                }
-            }
+            settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+            webViewClient = WebViewClient()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                (360 * context.resources.displayMetrics.density).toInt()
+            )
         }
-        webView.loadUrl(url)
 
-        val dialog = AlertDialog.Builder(context)
-            .setTitle("Solve Cloudflare — complete then Save")
-            .setView(webView)
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+            addView(webView)
+            addView(TextView(context).apply {
+                text = "Complete the Cloudflare challenge, then tap Save Cookies."
+                setPadding(20, 10, 20, 10)
+                setTextColor(Color.parseColor("#616161"))
+                textSize = 12f
+            })
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("Cloudflare — $target")
+            .setView(container)
             .setPositiveButton("Save Cookies") { _, _ ->
-                val currentUrl = webView.url ?: url
-                val cookies = CookieManager.getInstance().getCookie(currentUrl) ?: ""
-                if (cookies.isNotBlank()) {
-                    try {
-                        val host = java.net.URL(currentUrl).host
-                        NartoStore.saveCfCookie(host, cookies)
-                        Toast.makeText(context, "Saved cookies for $host", Toast.LENGTH_SHORT).show()
-                    } catch (_: Exception) {
-                        Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
-                    }
+                val current = webView.url ?: target
+                val ck = CookieManager.getInstance().getCookie(current)
+                    ?: CookieManager.getInstance().getCookie(target)
+                if (!ck.isNullOrBlank()) {
+                    NartoStore.saveCfCookie(current, ck)
+                    Toast.makeText(context, "Cookies saved (${ck.length} chars)", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "No cookies found — wait for page to load", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "No cookies found — wait longer", Toast.LENGTH_LONG).show()
                 }
             }
             .setNegativeButton("Close", null)
-            .create()
-        dialog.show()
-        webView.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 900)
+            .create().also { d ->
+                webView.loadUrl(target)
+                d.show()
+            }
     }
 }

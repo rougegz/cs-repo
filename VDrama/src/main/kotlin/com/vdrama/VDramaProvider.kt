@@ -77,6 +77,17 @@ open class VDramaProvider : MainAPI() {
             "&dramaId=${java.net.URLEncoder.encode(dramaId, "UTF-8")}" +
             "&episodeId=${java.net.URLEncoder.encode(episodeId, "UTF-8")}&lang=en-US"
 
+    private fun cfHeaders(url: String): Map<String, String> {
+        val base = browserHeaders().toMutableMap()
+        VdramaStore.getCfCookieForUrl(url)?.let { base["Cookie"] = it }
+        return base
+    }
+
+    private fun isCloudflare(html: String): Boolean {
+        val l = html.lowercase()
+        return l.contains("just a moment") || l.contains("challenge-platform") || l.contains("cf-browser-verification") || (l.contains("attention required") && l.contains("cloudflare"))
+    }
+
     // ---------------------------------------------------------------------
     // Home page
     // ---------------------------------------------------------------------
@@ -126,11 +137,12 @@ open class VDramaProvider : MainAPI() {
     private suspend fun fetchCards(url: String): List<com.lagradost.cloudstream3.MovieSearchResponse> {
         val html = app.get(
             url,
-            headers = browserHeaders(),
+            headers = cfHeaders(url),
             referer = "$mainUrl/",
             timeout = 30L,
-            cacheTime = 10, // minutes; rides OkHttp's 50MiB disk cache
+            cacheTime = 10,
         ).text
+        if (isCloudflare(html)) return emptyList()
 
         val doc = Jsoup.parse(html, mainUrl)
         val out = ArrayList<com.lagradost.cloudstream3.MovieSearchResponse>(64)
@@ -180,7 +192,7 @@ open class VDramaProvider : MainAPI() {
 
         val detail = app.get(
             detailApiUrl(provider, id),
-            headers = browserHeaders(),
+            headers = cfHeaders(url),
             referer = "$mainUrl/",
             timeout = 30L,
             cacheTime = 30,
@@ -295,7 +307,7 @@ open class VDramaProvider : MainAPI() {
         // Stream links expire -> never serve them from cache.
         val res = app.get(
             data,
-            headers = browserHeaders(),
+            headers = cfHeaders(data),
             referer = "$mainUrl/",
             timeout = 30L,
             cacheTime = 0,

@@ -13,18 +13,17 @@ class VDramaPlugin : Plugin() {
     override fun load(context: Context) {
         VdramaStore.init(context)
 
-        // Persisted domain override wins on startup; default otherwise.
-        provider.mainUrl = normalizeBaseUrl(VdramaStore.loadOverride()) ?: DEFAULT_BASE_URL
+        // Active domain (of 3) wins on startup; default otherwise.
+        provider.mainUrl = VdramaStore.base()
 
         registerMainAPI(provider)
 
-        // Gear icon for this plugin inside CloudStream's plugin settings screen.
         openSettings = { ctx ->
             VdramaSettingsDialog.show(ctx, provider.mainUrl)
         }
 
         VdramaSettingsDialog.onDomainChanged = {
-            provider.mainUrl = normalizeBaseUrl(VdramaStore.loadOverride()) ?: DEFAULT_BASE_URL
+            provider.mainUrl = VdramaStore.base()
             runCatching { MainActivity.reloadHomeEvent.invoke(true) }
         }
     }

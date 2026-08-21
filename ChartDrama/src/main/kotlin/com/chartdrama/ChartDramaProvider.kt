@@ -21,7 +21,7 @@ class ChartDramaProvider : MainAPI() {
     )
 
     private fun baseHost(): String {
-        val b = ChartStore.loadBase()?.let { normalizeBaseUrl(it) } ?: mainUrl
+        val b = ChartStore.activeBase()
         return normalizeBaseUrl(b) ?: DEFAULT_BASE_URL
     }
 
