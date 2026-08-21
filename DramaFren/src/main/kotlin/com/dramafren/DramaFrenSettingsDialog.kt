@@ -9,7 +9,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -25,52 +24,36 @@ object DramaFrenSettingsDialog {
             setText(DramaFrenStore.loadApiOverride() ?: "")
             isSingleLine = true
             setSelectAllOnFocus(true)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
         val reelInput = EditText(context).apply {
             hint = "Reel base (empty = $DEFAULT_REEL_BASE)"
             setText(DramaFrenStore.loadReelOverride() ?: "")
             isSingleLine = true
             setSelectAllOnFocus(true)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
 
         val cfButton = Button(context).apply {
             text = "🛡️ Solve Cloudflare"
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             setOnClickListener { showCfWebView(context, DramaFrenStore.apiBase()) }
         }
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad/2, pad, 0)
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
             addView(TextView(context).apply {
                 text = "Current: $currentBase"
                 textSize = 13f
                 setTextColor(Color.GRAY)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             })
-            addView(TextView(context).apply {
-                text = "API Domain"
-                setTextColor(Color.DKGRAY)
-                textSize = 12f
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            })
+            addView(TextView(context).apply { text = "API Domain"; setTextColor(Color.DKGRAY); textSize = 12f })
             addView(apiInput)
-            addView(TextView(context).apply {
-                text = "Reel Domain (Cloudflare)"
-                setTextColor(Color.DKGRAY)
-                textSize = 12f
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            })
+            addView(TextView(context).apply { text = "Reel Domain (Cloudflare)"; setTextColor(Color.DKGRAY); textSize = 12f })
             addView(reelInput)
             addView(cfButton)
             addView(TextView(context).apply {
                 text = "Change domain if site moves. Tap Cloudflare if you see 403 / Just a moment."
                 textSize = 11f
                 setTextColor(Color.GRAY)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             })
         }
 
@@ -98,7 +81,6 @@ object DramaFrenSettingsDialog {
             settings.domStorageEnabled = true
             settings.userAgentString = browserHeaders()["User-Agent"]
             webViewClient = WebViewClient()
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 900)
         }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -106,13 +88,11 @@ object DramaFrenSettingsDialog {
 
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
-            addView(webView)
+            addView(webView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 900))
             addView(TextView(context).apply {
                 text = "Solve the Cloudflare challenge, then tap Save Cookies"
                 setPadding(20, 10, 20, 10)
                 setTextColor(Color.DKGRAY)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             })
         }
 

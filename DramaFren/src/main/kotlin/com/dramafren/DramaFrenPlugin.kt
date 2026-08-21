@@ -7,12 +7,11 @@ import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
 class DramaFrenPlugin : Plugin() {
-
     private val provider = DramaFrenProvider()
 
     override fun load(context: Context) {
         DramaFrenStore.init(context)
-        provider.mainUrl = normalizeBaseUrl(DramaFrenStore.loadOverride()) ?: DEFAULT_BASE_URL
+        provider.mainUrl = DramaFrenStore.base()
         registerMainAPI(provider)
 
         openSettings = { ctx ->
@@ -20,11 +19,7 @@ class DramaFrenPlugin : Plugin() {
         }
 
         DramaFrenSettingsDialog.onDomainChanged = {
-            provider.mainUrl = normalizeBaseUrl(DramaFrenStore.loadOverride()) ?: DEFAULT_BASE_URL
-            runCatching { MainActivity.reloadHomeEvent.invoke(true) }
-        }
-
-        DramaFrenSettingsDialog.onCloudflareSolved = {
+            provider.mainUrl = DramaFrenStore.base()
             runCatching { MainActivity.reloadHomeEvent.invoke(true) }
         }
     }
