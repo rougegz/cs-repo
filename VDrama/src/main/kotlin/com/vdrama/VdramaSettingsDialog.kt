@@ -37,15 +37,15 @@ object VdramaSettingsDialog {
         }
 
         val input = EditText(context).apply {
-            hint = DEFAULT_BASE_URL
-            setText(VdramaStore.base())
+            hint = "New domain (current: ${currentBaseUrl})"
+            setText("")
             isSingleLine = true
             setSelectAllOnFocus(true)
         }
 
         fun save(): Boolean {
             val raw = input.text?.toString()?.trim().orEmpty()
-            if (raw.isEmpty()) { toast(context, "Enter a domain"); return false }
+            if (raw.isEmpty()) { toast(context, "Unchanged — current domain kept"); return true }
             val normalized = normalizeBaseUrl(raw)
             if (normalized == null) { toast(context, "Invalid URL"); return false }
             VdramaStore.saveDomain(0, normalized)
@@ -70,10 +70,20 @@ object VdramaSettingsDialog {
             addView(label(context, "Current domain"))
             addView(TextView(context).apply {
                 text = currentBaseUrl
-                textSize = 13f
-                setTextColor(Color.DKGRAY)
+                textSize = 14f
+                setTextColor(Color.parseColor("#1A73E8"))
+                // make it look & act like a link
+                paint.isUnderlineText = true
+                setOnClickListener { v ->
+                    runCatching {
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(currentBaseUrl)).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            v.context.startActivity(this)
+                        }
+                    }
+                }
             })
-            addView(label(context, "New domain"))
+            addView(label(context, "New domain (leave blank to keep current)"))
             addView(input)
             addView(cfButton)
             addView(status)

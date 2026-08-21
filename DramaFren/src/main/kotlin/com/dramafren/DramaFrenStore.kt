@@ -151,7 +151,9 @@ fun parseDramaUrl(link: String): Pair<String, String>? {
     val slash = after.indexOf('/')
     if (slash == -1) return null
     val provider = after.substring(0, slash)
-    if (provider !in PROVIDER_NAMES.values && provider !in DRAMAFREN_CATALOG.map { it.second }) return null
+    // Accept any provider slug: search/detail can return apps outside our 28-row catalog
+    // (dramawave, radreel, stardusttv...) and rejecting them caused "error" on load.
+    if (!provider.matches(Regex("[a-z0-9]+"))) return null
     val rest = after.substring(slash + 1)
     val id = rest.substringBefore('-')
     if (id.isEmpty() || !id.all { it.isDigit() }) return null

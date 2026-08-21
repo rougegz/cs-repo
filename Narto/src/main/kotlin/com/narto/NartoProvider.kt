@@ -26,8 +26,8 @@ class NartoProvider : MainAPI() {
 
     private fun sectionsUrl(provider: String): String {
         // Site returns ALL sections in one call (no server pagination) — verified live.
-        return "$mainUrl/home/providers/sections?provider=$provider&lang=en-US&target_lang=en-US" +
-            "&_cb=${System.currentTimeMillis()}"
+        // no cache-buster: it defeats OkHttp caching and made loading crawl
+        return "$mainUrl/home/providers/sections?provider=$provider&lang=en-US&target_lang=en-US"
     }
 
     private fun searchUrl(query: String): String =
@@ -37,7 +37,7 @@ class NartoProvider : MainAPI() {
         if (page > 1) return newHomePageResponse(request, emptyList(), hasNext = false)
         val url = sectionsUrl(request.data)
         val headers = NartoStore.injectCfCookies(url, nartoHeaders())
-        val json = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 30L, cacheTime = 5).parsedSafe<SectionsResponse>()
+        val json = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 20L, cacheTime = 15).parsedSafe<SectionsResponse>()
         val items = json?.sections?.flatMap { sec ->
             sec.items.mapNotNull { item ->
                 val title = item.title?.trim() ?: return@mapNotNull null
@@ -207,10 +207,12 @@ class NartoProvider : MainAPI() {
             return false
         }
 
-        // primary: contentUrl in ld+json or meta
-        val m3u8s = Regex("""https://[^"']+\.m3u8[^"']*""").findAll(html).map { it.value }.toList()
-        val mp4s = Regex("""https://[^"']+\.mp4[^"']*""").findAll(html).map { it.value }.toList()
-        val vtts = Regex("""https://[^"']+\.vtt[^"']*""").findAll(html).map { it.value }.toList()
+        // play_url lives inside embedded JSON where "/" is escaped as "\/" —
+        // unescape first or the URL regexes never match (root cause of "error" titles).
+        val flat = html.replace("\\/", "/")
+        val m3u8s = Regex("""https://[^"'\\\s]+\.m3u8[^"'\\\s]*""").findAll(flat).map { it.value }.toList()
+        val mp4s = Regex("""https://[^"'\\\s]+\.mp4[^"'\\\s]*""").findAll(flat).map { it.value }.toList()
+        val vtts = Regex("""https://[^"'\\\s]+\.vtt[^"'\\\s]*""").findAll(flat).map { it.value }.toList()
 
         // subtitles: look for vtt
         vtts.forEach { sub ->
