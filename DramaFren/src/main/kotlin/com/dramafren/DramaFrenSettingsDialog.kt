@@ -9,6 +9,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -40,6 +41,11 @@ object DramaFrenSettingsDialog {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad/2, pad, 0)
+            // Must be FrameLayout.LayoutParams: AlertDialog's parent is a FrameLayout.
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
             addView(TextView(context).apply {
                 text = "Current: $currentBase"
                 textSize = 13f
@@ -88,7 +94,16 @@ object DramaFrenSettingsDialog {
 
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            addView(webView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 900))
+            // AlertDialog wraps the custom view in a FrameLayout (AlertDialogLayout);
+            // the root MUST carry FrameLayout.LayoutParams or measure() crashes
+            // with ClassCastException (LinearLayout$LayoutParams -> FrameLayout$LayoutParams).
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            addView(webView, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, (300 * context.resources.displayMetrics.density).toInt()
+            ))
             addView(TextView(context).apply {
                 text = "Solve the Cloudflare challenge, then tap Save Cookies"
                 setPadding(20, 10, 20, 10)

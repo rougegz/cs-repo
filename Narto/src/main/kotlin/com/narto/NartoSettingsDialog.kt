@@ -7,6 +7,7 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -35,6 +36,7 @@ object NartoSettingsDialog {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad/2, pad, 0)
+            layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
             addView(TextView(context).apply {
                 text = "Current: $currentBaseUrl"
                 textSize = 13f
