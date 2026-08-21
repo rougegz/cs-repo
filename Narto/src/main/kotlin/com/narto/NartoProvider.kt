@@ -91,7 +91,11 @@ class NartoProvider : MainAPI() {
         // X-Requested-With makes the site return JSON: {ok, items:[{title,poster_url,url}]}
         val body = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 30L, cacheTime = 10).text
         if (body.trimStart().startsWith("{")) {
-            val json = runCatching { body.parsedSafe<SearchResponseNarto>() }.getOrNull()
+            val json = runCatching {
+                com.fasterxml.jackson.databind.ObjectMapper()
+                    .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                    .readValue(body, SearchResponseNarto::class.java)
+            }.getOrNull()
             val items = json?.items.orEmpty().filter { !it.title.isNullOrBlank() && !it.url.isNullOrBlank() }
             val out = items.map { it ->
                 newMovieSearchResponse(it.title!!, it.url!!, TvType.AsianDrama) {
