@@ -1,0 +1,86 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/rougegz/cs-repo/builds/ChartDrama.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "ChartDrama",
+        "internalName": "ChartDrama",
+        "authors": [
+            "rougegz"
+        ],
+        "description": "ChartDrama \u2014 35 short-drama platforms via chartdrama.com.\nHome: Reelshort, Dramabox, GoodShort, DramaWave, NetShort, ShortMax, StardustTV, FreeReels, StarShort, ShotShort, DramaTV, 4Drama, FlexTV, Shorts, NovaFilck, ThisReels, SodaTV, KalosTV, MuVpix, Toonory, AuraReels, VenixTV, StarReel, LeapReels, TasteLife, FlareFlow, JoyReels, ZiptaleTV, Vyntage, SanpPlay, SwoopReels, Flikso, Plotify, Myrelle, Nebuluxe, Lunory \u2014 each endless.\nDomain switch + Cloudflare solve in Settings > Plugins > ChartDrama.",
+        "fileSize": 32159,
+        "repositoryUrl": "https://github.com/rougegz/cs-repo",
+        "language": "en",
+        "tvTypes": [
+            "AsianDrama",
+            "Movie"
+        ],
+        "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Korduene_Logo.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-832a1d2fe7789ee22a39f1599fcef0ecc91ef3cc0d1204cea39abc01f9097e4b"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/rougegz/cs-repo/builds/DramaFren.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "DramaFren",
+        "internalName": "DramaFren",
+        "authors": [
+            "rougegz"
+        ],
+        "description": "DramaFren aggregator \u2014 api.dramafren.org + reelfren.dramafren.org (Cloudflare) \u2014 English.\n28 home categories: Melolo, Sereal+, PineDrama, Shorten, HappyShort, Vigloo, RaptDrama, CubeTV, JoyReels, AnyReel, MiniTV, Bstation, GoldDrama, Reelife, ReelShort, DramaBox, DramaNova, KalosTV, VibeShort, FreeReels, WeTV, StoryReel, MovieBox, MovieBox Shorts, MyDrama, FlareFlow, PlayLet, ShortMax \u2014 each endless, subcategories merged. Quality, subtitles, audio labels. Domain & Cloudflare solvable from settings.",
+        "fileSize": 37437,
+        "repositoryUrl": "https://github.com/rougegz/cs-repo",
+        "language": "en",
+        "tvTypes": [
+            "AsianDrama",
+            "Movie"
+        ],
+        "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Korduene_Logo.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-95126ebf538b4d174dd2d24198f6513615852baf7e9ec2ad40ab167d5e663724"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/rougegz/cs-repo/builds/Narto.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "Narto",
+        "internalName": "Narto",
+        "authors": [
+            "rougegz"
+        ],
+        "description": "Narto Drama \u2014 edge.narto-drama.com aggregator.\n35 providers: BibiShort, BiliTV, CubeTV, DotDrama, Dramabite, DramaBox, DramaNova, DramaWave, FlareFlow, FlexTV, FlickReels, FreeReels, FunDrama, GoodShort, HappyShort, iDrama, JoyReels, KalosTV, Melolo, MicroDrama, MoboReels, NetShort, PineDrama, RapidTV, ReelBuzz, Reelife, ReelShort, Sereal+, Shortical, ShortMax, StardustTV, StarShort, Velolo, Vigloo, Vyntage \u2014 each with unlimited scroll, combined subcategories (For You + Feed), quality/subs/audio, Cloudflare + domain switch.",
+        "fileSize": 36676,
+        "repositoryUrl": "https://github.com/rougegz/cs-repo",
+        "language": "en",
+        "tvTypes": [
+            "AsianDrama",
+            "Movie"
+        ],
+        "iconUrl": "https://edge.narto-drama.com/favicon.ico",
+        "apiVersion": 1,
+        "fileHash": "sha256-faf4d87605f94cb4b88e5e9ac9ed1a74ba903302aca8f5d8bf18908032be28cd"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/rougegz/cs-repo/builds/VDrama.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "VDrama",
+        "internalName": "VDrama",
+        "authors": [
+            "vdrama-cloudstream"
+        ],
+        "description": "Short-drama aggregator powered by v-drama.net.\nHome categories: DramaBox, ReelShort, FreeReels, Youdrama, Hishort, Meloshort,\nSodareels, Dramamax, NetShort, MoboReels, iDrama, Pinedrama, ShortMax, DramaBite,\nFlareflow, WeTV, iQIYI, DramaNova, Melolo, StarShort \u2014 each with endless scrolling.\nChange the site domain from Settings > Plugins > VDrama (gear icon).",
+        "fileSize": 34348,
+        "repositoryUrl": "https://github.com/rougegz/cs-repo",
+        "language": "en",
+        "tvTypes": [
+            "AsianDrama",
+            "Movie"
+        ],
+        "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/2/2f/Korduene_Logo.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-4213a0fc39445fb87eb9399b1a752effe236eb0a26792249178b700274907dae"
+    }
+]

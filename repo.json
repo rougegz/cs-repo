@@ -1,0 +1,8 @@
+{
+    "name": "VDrama Repository",
+    "description": "VDrama — 20 short-drama categories",
+    "manifestVersion": 1,
+    "pluginLists": [
+        "https://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json"
+    ]
+}
