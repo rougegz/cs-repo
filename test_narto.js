@@ -16,6 +16,11 @@ async function j(url){ const r=await fetch(url,{headers:H}); if(!r.ok) throw new
   check("all have posters", items.every(i=>!!i.poster_url));
   check("watch_url absolute", items[0].watch_url.startsWith("http"));
   check("book_id present", !!items[0].book_id);
+  // search returns JSON when X-Requested-With is set (provider flow)
+  const sr = await fetch(`${BASE}/search?lang=en-US&q=love`, { headers: H });
+  const sj = await sr.json();
+  check("search JSON ok", sj.ok === true && Array.isArray(sj.items) && sj.items.length > 0, `got ${sj.items?.length}`);
+  check("search item has url+title", !!sj.items[0].url && !!sj.items[0].title);
   console.log(`\n==== ${passed} passed, ${failed} failed ====`);
   process.exit(failed?1:0);
 })().catch(e=>{console.error(e);process.exit(1);});

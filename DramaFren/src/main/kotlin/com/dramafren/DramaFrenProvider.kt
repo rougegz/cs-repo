@@ -69,6 +69,14 @@ class DramaFrenProvider : MainAPI() {
     data class HomeResponse(val data: List<HomeItem>? = null, val offset: Int? = null)
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    data class SearchApiResponse(
+        val query: String? = null,
+        val count: Int? = null,
+        val hasMore: Boolean? = null,
+        val data: List<HomeItem>? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class DetailResponse(
         val id: String? = null,
         val title: String? = null,
@@ -113,24 +121,22 @@ class DramaFrenProvider : MainAPI() {
     private fun dramaUrl(provider: String, id: String): String =
         "${api()}/drama/$provider/$id-x?lang=en"
 
-    // ---- Search (HTML page) ----
+    // ---- Search (JSON API, verified live) ----
     override suspend fun search(query: String, page: Int): SearchResponseList {
-        if (page > 1 || query.isBlank()) return newSearchResponseList(emptyList(), false)
-        val url = "${api()}/search?lang=en&q=${java.net.URLEncoder.encode(query, "UTF-8")}"
-        val html = app.get(url, headers = cfHeaders(url), timeout = 30L, cacheTime = 10).text
-        if (isCloudflare(html)) return newSearchResponseList(emptyList(), false)
-        val doc = Jsoup.parse(html, api())
-        val out = ArrayList<SearchResponse>(32)
-        val seen = HashSet<String>()
-        for (a in doc.select("a[href*=\"/drama/\"]")) {
-            val img = a.selectFirst("img") ?: continue
-            val title = img.attr("alt").trim().ifEmpty { a.text().trim().take(80) }
-            val poster = img.attr("src").trim()
-            val href = a.absUrl("href")
-            if (title.isEmpty() || poster.isEmpty() || !seen.add(href)) continue
-            out += newMovieSearchResponse(title, href, TvType.AsianDrama) { this.posterUrl = poster }
+        if (query.isBlank()) return newSearchResponseList(emptyList(), false)
+        // API supports offset paging via &offset=N (page-1)*10 style; use it for endless search
+        val url = "${api()}/api/search?lang=en&q=${java.net.URLEncoder.encode(query, "UTF-8")}" +
+            if (page > 1) "&offset=${(page - 1) * 10}" else ""
+        val res = app.get(url, headers = cfHeaders(url), timeout = 30L, cacheTime = 5)
+        val json = runCatching { res.parsedSafe<SearchApiResponse>() }.getOrNull()
+            ?: return newSearchResponseList(emptyList(), false)
+        val items = json.data.orEmpty().filter { !it.id.isNullOrBlank() && !it.title.isNullOrBlank() }
+        val cards = items.map {
+            newMovieSearchResponse(it.title!!, dramaUrl(it.provider ?: "", it.id!!), TvType.AsianDrama) {
+                this.posterUrl = it.cover
+            }
         }
-        return newSearchResponseList(out, hasNext = false)
+        return newSearchResponseList(cards, hasNext = json.hasMore == true && items.isNotEmpty())
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> =

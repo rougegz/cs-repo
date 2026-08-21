@@ -74,12 +74,35 @@ class NartoProvider : MainAPI() {
         val book_id: String? = null,
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class SearchItem(
+        val title: String? = null,
+        val poster_url: String? = null,
+        val url: String? = null,
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class SearchResponseNarto(val ok: Boolean? = null, val items: List<SearchItem>? = null)
+
     override suspend fun search(query: String, page: Int): SearchResponseList {
         if (page > 1 || query.isBlank()) return newSearchResponseList(emptyList(), false)
         val url = searchUrl(query)
         val headers = NartoStore.injectCfCookies(url, nartoHeaders())
-        val html = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 30L, cacheTime = 10).text
-        val doc = Jsoup.parse(html, mainUrl)
+        // X-Requested-With makes the site return JSON: {ok, items:[{title,poster_url,url}]}
+        val body = app.get(url, headers = headers, referer = "$mainUrl/", timeout = 30L, cacheTime = 10).text
+        if (body.trimStart().startsWith("{")) {
+            val json = runCatching { body.parsedSafe<SearchResponseNarto>() }.getOrNull()
+            val items = json?.items.orEmpty().filter { !it.title.isNullOrBlank() && !it.url.isNullOrBlank() }
+            val out = items.map { it ->
+                newMovieSearchResponse(it.title!!, it.url!!, TvType.AsianDrama) {
+                    this.posterUrl = it.poster_url?.let { p ->
+                        if (p.startsWith("http")) p else "$mainUrl$p"
+                    }
+                }
+            }
+            return newSearchResponseList(out, hasNext = false)
+        }
+        val doc = Jsoup.parse(body, mainUrl)
         val out = mutableListOf<SearchResponse>()
         val seen = HashSet<String>()
         // search results are similar cards: links to /detail/watch/...
