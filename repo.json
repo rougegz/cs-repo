@@ -1,8 +1,9 @@
 {
-  "name": "rougegz cs-repo",
-  "description": "CloudStream extensions: ChartDrama, DramaFren, Narto, VDrama",
-  "manifestUrl": "https://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json",
-  "pluginLists": [
-    "https://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json"
-  ]
+    "name": "rougegz Repo",
+    "description": "Short-drama and streaming extensions",
+    "iconUrl": "https://github.com/rougegz.png",
+    "manifestVersion": 2,
+    "pluginLists": [
+        "https://raw.githubusercontent.com/rougegz/cs-repo/builds/plugins.json"
+    ]
 }
