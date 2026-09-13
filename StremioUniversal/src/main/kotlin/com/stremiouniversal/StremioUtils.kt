@@ -11,11 +11,6 @@ const val FILTER_CATALOGS_PER_ADDON = 6
 
 private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv")
 
-private val CREDENTIAL_HEADERS = setOf(
-    "authorization", "cookie", "set-cookie", "host",
-    "content-length", "connection", "proxy-authorization"
-)
-
 private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.demonii.com:1337/announce",
@@ -26,9 +21,6 @@ private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.moeking.me:6969/announce",
     "http://tracker.openbittorrent.com:80/announce"
 )
-
-private const val DEFAULT_UA =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 fun manifestBase(manifestUrl: String): String =
     manifestUrl.substringBefore("?").replace(Regex("/manifest\\.json.*$"), "").trimEnd('/')
@@ -71,11 +63,6 @@ fun fixPosterUrl(poster: String?): String? {
 fun stripHtml(raw: String?): String =
     raw.orEmpty().replace(Regex("<[^>]*>"), "").replace(Regex("\\s+"), " ").trim()
 
-fun displayName(name: String?, title: String?): String = when {
-    !name.isNullOrBlank() && !title.isNullOrBlank() -> "$name $title"
-    else -> title ?: name.orEmpty()
-}
-
 fun resolutionOf(label: String): Pair<String?, Int> {
     val l = label.lowercase()
     return when {
@@ -96,63 +83,6 @@ fun qualityValue(tag: String?): Int {
     val query = if (t.equals("4K", ignoreCase = true)) "2160p"
     else Regex("(\\d{3,4}[pP])").find(t)?.groupValues?.get(1)
     return getQualityFromName(query)
-}
-
-private fun codecOf(l: String): String? = when {
-    Regex("\\b(av1|av01)\\b").containsMatchIn(l) -> "AV1"
-    Regex("\\b(x265|h.?265|hevc)\\b").containsMatchIn(l) -> "HEVC"
-    Regex("\\b(x264|h.?264|avc)\\b").containsMatchIn(l) -> "H.264"
-    Regex("\\bvp9\\b").containsMatchIn(l) -> "VP9"
-    else -> null
-}
-
-private fun audioOf(l: String): String? = when {
-    Regex("\\batmos\\b|\\btruehd\\b").containsMatchIn(l) -> "Atmos"
-    Regex("\\bdts[-\\s]?hd\\b").containsMatchIn(l) -> "DTS-HD"
-    Regex("\\bdts\\b").containsMatchIn(l) -> "DTS"
-    Regex("\\bflac\\b").containsMatchIn(l) -> "FLAC"
-    Regex("\\baac\\b|\\beac3\\b").containsMatchIn(l) -> "AAC"
-    Regex("\\bac3\\b").containsMatchIn(l) -> "AC3"
-    Regex("\\bopus\\b").containsMatchIn(l) -> "Opus"
-    else -> null
-}
-
-private fun languageOf(l: String): String? {
-    val found = mutableListOf<String>()
-    listOf(
-        Regex("\\bmulti\\b") to "Multi",
-        Regex("\\bdual[\\s._-]?audio\\b|\\bdual\\b") to "Dual",
-        Regex("\\bhindi\\b") to "Hin",
-        Regex("\\btamil\\b") to "Tam",
-        Regex("\\btelugu\\b") to "Tel",
-        Regex("\\bmalayalam\\b") to "Mal",
-        Regex("\\bkannada\\b") to "Kan",
-        Regex("\\bbengali\\b") to "Ben",
-        Regex("\\bjapanese?\\b") to "Jpn",
-        Regex("\\bkorean?\\b") to "Kor",
-        Regex("\\bchinese?\\b") to "Chi",
-        Regex("\\bspanish?\\b") to "Spa",
-        Regex("\\bfrench?\\b") to "Fre",
-        Regex("\\bgerman?\\b") to "Ger",
-        Regex("\\brussian?\\b") to "Rus",
-        Regex("\\benglish\\b") to "Eng"
-    ).forEach { (pattern, tag) -> if (pattern.containsMatchIn(l)) found.add(tag) }
-    return found.takeIf { it.isNotEmpty() }?.joinToString("+")
-}
-
-private fun sizeOf(videoBytes: Long?, label: String): String? {
-    if (videoBytes != null && videoBytes > 0) {
-        val gb = videoBytes.toDouble() / 1073741824.0
-        return "%.2f".format(gb).trimEnd('0').trimEnd('.') + "GB"
-    }
-    val match = Regex("(\\d+(?:\\.\\d+)?)\\s*(GB|GiB|MB|MiB)", RegexOption.IGNORE_CASE).find(label)
-        ?: return null
-    val amount = match.groupValues[1]
-    return if (match.groupValues[2].lowercase().startsWith("g")) "${amount}GB"
-    else {
-        val mb = amount.toDoubleOrNull() ?: return null
-        if (mb >= 1024) "%.2f".format(mb / 1024).trimEnd('0').trimEnd('.') + "GB" else "${amount}MB"
-    }
 }
 
 private fun seedersOf(label: String): Int {
@@ -177,24 +107,11 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, extraTr
     }
 }
 
-fun sanitizeHeaders(request: Map<String, String>?, fallback: Map<String, String>? = null): Map<String, String> {
+fun mergeStreamHeaders(stream: StremioStream): Map<String, String> {
     val merged = mutableMapOf<String, String>()
-    fallback?.forEach { (k, v) -> merged[k] = v }
-    request?.forEach { (k, v) -> merged[k] = v }
-    val out = merged.filterKeys { it.lowercase() !in CREDENTIAL_HEADERS }.toMutableMap()
-    if (out.keys.none { it.equals("User-Agent", ignoreCase = true) }) {
-        out["User-Agent"] = DEFAULT_UA
-    }
-    return out
-}
-
-private val REFERER_OVERRIDES = mapOf(
-    "streamlock.net" to "https://www.gillitv.live/"
-)
-
-fun refererOverride(url: String): String? {
-    val host = url.substringAfter("://").substringBefore("/").lowercase()
-    return REFERER_OVERRIDES.entries.firstOrNull { host == it.key || host.endsWith(".${it.key}") }?.value
+    stream.behaviorHints?.headers?.forEach { (k, v) -> merged[k] = v }
+    stream.behaviorHints?.proxyHeaders?.request?.forEach { (k, v) -> merged[k] = v }
+    return merged
 }
 
 fun parseAddonLines(lines: List<String>): List<AddonConfig> =
@@ -212,8 +129,9 @@ fun displayAddonLine(config: AddonConfig): String =
 fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): StreamLink? {
     val direct = stream.url?.trim().orEmpty()
     val hash = stream.infoHash?.trim().orEmpty()
-    val label = listOfNotNull(stream.name, stream.title, stream.description).joinToString(" ")
-    val low = label.lowercase()
+    val body = stream.description?.trim().orEmpty().ifEmpty { stream.title?.trim().orEmpty() }
+    val text = listOfNotNull(stream.name?.trim(), body).filter { it.isNotEmpty() }.joinToString(" ")
+    val low = text.lowercase()
     val url = when {
         direct.startsWith("http://") || direct.startsWith("https://") -> {
             val path = direct.replace(Regex("^https?://[^/]+"), "")
@@ -223,35 +141,24 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
         direct.startsWith("magnet:") -> direct
         hash.isNotEmpty() -> buildMagnet(
             hash,
-            stream.behaviorHints?.filename ?: stream.title ?: stream.name,
+            stream.name ?: stream.behaviorHints?.filename,
             stream.sources
         ) ?: return null
         else -> return null
     }
     val (resolution, rank) = resolutionOf(low)
-    val parts = listOfNotNull(
-        resolution,
-        sizeOf(stream.behaviorHints?.videoSize, low)?.let { "💾$it" },
-        seedersOf(low).takeIf { it > 0 }?.let { "🌱$it" },
-        codecOf(low),
-        audioOf(low)?.let { "🔊$it" },
-        languageOf(low)
-    )
-    val prefix = parts.joinToString("|")
-    val headers = sanitizeHeaders(
-        stream.behaviorHints?.proxyHeaders?.request,
-        stream.behaviorHints?.headers
-    ).toMutableMap()
-    refererOverride(url)?.let { referer ->
-        if (headers.keys.none { it.equals("Referer", ignoreCase = true) }) {
-            headers["Referer"] = referer
-        }
+    val header = stream.name?.trim().orEmpty()
+    val title = when {
+        body.isNotEmpty() && header.isNotEmpty() && header != body && header != addonName -> "$header • $body"
+        body.isNotEmpty() -> body
+        else -> header.ifEmpty { url }
     }
     return StreamLink(
         url = url,
-        label = if (prefix.isEmpty()) "[$addonName]" else "$prefix[$addonName]",
+        source = addonName,
+        title = title,
         qualityTag = resolution,
-        headers = headers,
+        headers = mergeStreamHeaders(stream),
         resolutionRank = rank,
         seeders = seedersOf(low),
         addonOrder = addonOrder,

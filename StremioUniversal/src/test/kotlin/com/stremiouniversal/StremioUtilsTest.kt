@@ -35,21 +35,26 @@ class StremioUtilsTest {
     }
 
     @Test
-    fun `credential headers are stripped and ua added once`() {
-        val out = sanitizeHeaders(
-            mapOf("Authorization" to "Bearer s3cret", "Referer" to "https://cdn.example/"),
-            mapOf("user-agent" to "Custom/1.0", "Cookie" to "a=b")
-        )
-        assertFalse(out.keys.any { it.equals("authorization", ignoreCase = true) })
-        assertFalse(out.keys.any { it.equals("cookie", ignoreCase = true) })
-        assertEquals("https://cdn.example/", out["Referer"])
-        assertEquals(1, out.keys.count { it.equals("user-agent", ignoreCase = true) })
+    fun `stream text stays verbatim like stremio clients`() {
+        val same = toStreamLink(
+            StremioStream(name = "DesiFlix", title = "480p • Server 1", url = "https://cdn.example/x.mp4"),
+            "DesiFlix",
+            0
+        )!!
+        assertEquals("DesiFlix", same.source)
+        assertEquals("480p • Server 1", same.title)
+        val headed = toStreamLink(
+            StremioStream(name = "1080p", title = "Affordable encode", url = "https://cdn.example/y.mp4"),
+            "SomeAddon",
+            0
+        )!!
+        assertEquals("1080p • Affordable encode", headed.title)
     }
 
     @Test
     fun `sort prefers resolution then seeders then addon order`() {
         fun link(url: String, rank: Int, seeders: Int, order: Int) =
-            StreamLink(url, "s", null, emptyMap(), rank, seeders, order)
+            StreamLink(url, "s", "t", null, emptyMap(), rank, seeders, order)
         val sorted = sortAndDedupe(
             listOf(
                 link("https://c.example/low.mp4", 1, 999, 0),
@@ -66,7 +71,7 @@ class StremioUtilsTest {
     @Test
     fun `dedupe keeps multi-file torrents apart and drops exact dups`() {
         fun link(url: String, fileIdx: Int? = null) =
-            StreamLink(url, "s", null, emptyMap(), 2, 0, 0, fileIdx)
+            StreamLink(url, "s", "t", null, emptyMap(), 2, 0, 0, fileIdx)
         val hash = "b".repeat(40)
         val out = sortAndDedupe(
             listOf(
@@ -145,12 +150,21 @@ class StremioUtilsTest {
     }
 
     @Test
-    fun `referer fallback covers hotlink-protected cdn`() {
-        assertEquals(
-            "https://www.gillitv.live/",
-            refererOverride("https://58a49ee706238.streamlock.net/uploads/x.mp4")
+    fun `addon headers pass through verbatim without injection`() {
+        val stream = StremioStream(
+            name = "DesiFlix",
+            title = "480p",
+            url = "https://cdn.example/x.mp4",
+            behaviorHints = BehaviorHints(
+                proxyHeaders = ProxyHeaders(
+                    mapOf("Referer" to "https://www.gillitv.xyz/", "Authorization" to "Bearer abc")
+                )
+            )
         )
-        assertNull(refererOverride("https://cdn.example.com/x.mp4"))
+        val link = toStreamLink(stream, "DesiFlix", 0)!!
+        assertEquals("https://www.gillitv.xyz/", link.headers["Referer"])
+        assertEquals("Bearer abc", link.headers["Authorization"])
+        assertFalse(link.headers.keys.any { it.equals("User-Agent", ignoreCase = true) })
     }
 
     @Test

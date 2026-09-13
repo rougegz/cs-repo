@@ -248,10 +248,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             inlineSubtitles = raw.flatMap { it.subtitles }
                 .mapNotNull { toRemoteSubtitle(it) }
                 .distinctBy { it.url },
-            youtubeIds = raw.mapNotNull { it.ytId }.distinct(),
-            externalUrls = raw.mapNotNull { it.externalUrl }
-                .filter { it.startsWith("http://") || it.startsWith("https://") }
-                .distinct()
+            youtubeIds = raw.mapNotNull { it.ytId }.distinct()
         )
     }
 

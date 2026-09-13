@@ -54,7 +54,8 @@ data class MetaDetails(
 
 data class StreamLink(
     val url: String,
-    val label: String,
+    val source: String,
+    val title: String,
     val qualityTag: String?,
     val headers: Map<String, String>,
     val resolutionRank: Int,
@@ -66,8 +67,7 @@ data class StreamLink(
 data class StreamsResult(
     val links: List<StreamLink>,
     val inlineSubtitles: List<RemoteSubtitle>,
-    val youtubeIds: List<String> = emptyList(),
-    val externalUrls: List<String> = emptyList()
+    val youtubeIds: List<String> = emptyList()
 )
 
 data class RemoteSubtitle(

@@ -106,7 +106,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         val result = runCatching { repository.streamsFor(ref) }.getOrNull() ?: return false
         result.links.forEach { link ->
             callback(
-                newExtractorLink(link.label, link.label, link.url, INFER_TYPE) {
+                newExtractorLink(link.source, link.title, link.url, INFER_TYPE) {
                     quality = qualityValue(link.qualityTag)
                     headers = link.headers
                 }
@@ -114,9 +114,6 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         }
         result.youtubeIds.forEach { ytId ->
             runCatching { loadExtractor("https://www.youtube.com/watch?v=$ytId", subtitleCallback, callback) }
-        }
-        result.externalUrls.forEach { url ->
-            runCatching { loadExtractor(url, subtitleCallback, callback) }
         }
         if (repository.subtitlesEnabled()) {
             val remote = runCatching { repository.subtitlesFor(ref) }.getOrDefault(emptyList())
