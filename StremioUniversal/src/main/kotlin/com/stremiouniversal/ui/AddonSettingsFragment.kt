@@ -34,13 +34,13 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             setPadding(48, 48, 48, 48)
         }
         box.addView(TextView(ctx).apply {
-            text = "Stremio addons — one per line as Name|https://…/manifest.json. Order sets catalogue order."
+            text = "Stremio addons — one manifest URL per line (Name|URL also works). Order sets catalogue order; names come from the addon itself."
             textSize = 14f
         })
         val editor = EditText(ctx).apply {
             minLines = 6
-            hint = "DesiFlix|https://manifest.desitvhub.eu.org/manifest.json"
-            setText(repository.loadConfiguredAddons().joinToString("\n") { "${it.name}|${it.manifestUrl}" })
+            hint = "https://manifest.desitvhub.eu.org/manifest.json"
+            setText(repository.loadConfiguredAddons().joinToString("\n", transform = ::displayAddonLine))
         }
         box.addView(editor)
         val subtitles = CheckBox(ctx).apply {
@@ -51,15 +51,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         box.addView(Button(ctx).apply {
             text = "Save"
             setOnClickListener {
-                val configs = editor.text.toString().lines()
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-                    .mapNotNull { line ->
-                        val url = line.substringAfter("|", line).trim()
-                        if (!url.startsWith("http://") && !url.startsWith("https://")) return@mapNotNull null
-                        val name = line.substringBefore("|").trim().takeIf { it != url }.orEmpty()
-                        AddonConfig(name.ifEmpty { url }, url)
-                    }
+                val configs = parseAddonLines(editor.text.toString().lines())
                 if (configs.isEmpty()) {
                     Toast.makeText(ctx, "No valid addon URLs — list unchanged", Toast.LENGTH_LONG).show()
                     return@setOnClickListener

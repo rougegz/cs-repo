@@ -188,6 +188,27 @@ fun sanitizeHeaders(request: Map<String, String>?, fallback: Map<String, String>
     return out
 }
 
+private val REFERER_OVERRIDES = mapOf(
+    "streamlock.net" to "https://www.gillitv.live/"
+)
+
+fun refererOverride(url: String): String? {
+    val host = url.substringAfter("://").substringBefore("/").lowercase()
+    return REFERER_OVERRIDES.entries.firstOrNull { host == it.key || host.endsWith(".${it.key}") }?.value
+}
+
+fun parseAddonLines(lines: List<String>): List<AddonConfig> =
+    lines.map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { line ->
+        val url = line.substringAfter("|", line).trim()
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return@mapNotNull null
+        val name = line.substringBefore("|").trim().takeIf { it != url }.orEmpty()
+        AddonConfig(name, url)
+    }
+
+fun displayAddonLine(config: AddonConfig): String =
+    if (config.name.isEmpty() || config.name == config.manifestUrl) config.manifestUrl
+    else "${config.name}|${config.manifestUrl}"
+
 fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): StreamLink? {
     val direct = stream.url?.trim().orEmpty()
     val hash = stream.infoHash?.trim().orEmpty()
@@ -217,11 +238,20 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
         languageOf(low)
     )
     val prefix = parts.joinToString("|")
+    val headers = sanitizeHeaders(
+        stream.behaviorHints?.proxyHeaders?.request,
+        stream.behaviorHints?.headers
+    ).toMutableMap()
+    refererOverride(url)?.let { referer ->
+        if (headers.keys.none { it.equals("Referer", ignoreCase = true) }) {
+            headers["Referer"] = referer
+        }
+    }
     return StreamLink(
         url = url,
         label = if (prefix.isEmpty()) "[$addonName]" else "$prefix[$addonName]",
         qualityTag = resolution,
-        headers = sanitizeHeaders(stream.behaviorHints?.proxyHeaders?.request, stream.behaviorHints?.headers),
+        headers = headers,
         resolutionRank = rank,
         seeders = seedersOf(low),
         addonOrder = addonOrder,

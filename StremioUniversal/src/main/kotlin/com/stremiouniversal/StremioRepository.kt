@@ -35,7 +35,7 @@ class StremioRepository(prefs: SharedPreferences?) {
                     val url = arr.optJSONObject(i)?.optString("url").orEmpty().trim()
                     val name = arr.optJSONObject(i)?.optString("name").orEmpty().trim()
                     url.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-                        ?.let { AddonConfig(name.ifEmpty { it }, it) }
+                        ?.let { AddonConfig(name, it) }
                 }
             }.ifEmpty { BUILT_IN_ADDONS }
         }.getOrDefault(BUILT_IN_ADDONS)
@@ -68,7 +68,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             if (System.currentTimeMillis() - at < MANIFEST_TTL_MS) return manifest
         }
         return runCatching {
-            app.get(url, timeout = 15L).parsedSafe<StremioManifest>()
+            app.get(url, timeout = 20L).parsedSafe<StremioManifest>()
                 ?.also { manifests[url] = TimedManifest(System.currentTimeMillis(), it) }
         }.getOrNull() ?: manifests[url]?.manifest
     }
@@ -141,7 +141,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val paging = if (skip > 0) "/skip=$skip" else ""
         val url = withQuery("${addon.base}/catalog/$type/${catalog.id}$paging.json", addon.querySuffix)
         return runCatching {
-            app.get(url, timeout = 15L).parsedSafe<CatalogResponse>()?.metas.orEmpty()
+            app.get(url, timeout = 30L).parsedSafe<CatalogResponse>()?.metas.orEmpty()
         }.getOrDefault(emptyList())
     }
 
@@ -190,7 +190,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encoded = java.net.URLEncoder.encode(query, "UTF-8")
         val url = withQuery("${addon.base}/catalog/$type/${catalog.id}/search=$encoded.json", addon.querySuffix)
         return runCatching {
-            app.get(url, timeout = 10L).parsedSafe<CatalogResponse>()?.metas.orEmpty()
+            app.get(url, timeout = 30L).parsedSafe<CatalogResponse>()?.metas.orEmpty()
         }.getOrDefault(emptyList()).mapNotNull { it.toRef(addon, type) }
     }
 
@@ -214,7 +214,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encoded = java.net.URLEncoder.encode(id, "UTF-8")
         val url = withQuery("${addon.base}/meta/$type/$encoded.json", addon.querySuffix)
         return runCatching {
-            app.get(url, timeout = 15L).parsedSafe<CatalogResponse>()
+            app.get(url, timeout = 20L).parsedSafe<CatalogResponse>()
                 ?.let { it.meta ?: it.metas?.firstOrNull { meta -> meta.id == id } ?: it.metas?.firstOrNull() }
         }.getOrNull()
     }
@@ -222,7 +222,7 @@ class StremioRepository(prefs: SharedPreferences?) {
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
         return runCatching {
-            app.get("https://v3-cinemeta.strem.io/meta/$kind/$id.json", timeout = 15L)
+            app.get("https://v3-cinemeta.strem.io/meta/$kind/$id.json", timeout = 20L)
                 .parsedSafe<CatalogResponse>()?.meta
         }.getOrNull()
     }
@@ -260,7 +260,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             val encoded = java.net.URLEncoder.encode(ref.id, "UTF-8")
             val url = withQuery("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix)
             runCatching {
-                app.get(url, timeout = 20L).parsedSafe<StreamsResponse>()?.streams.orEmpty()
+                app.get(url, timeout = 60L).parsedSafe<StreamsResponse>()?.streams.orEmpty()
             }.getOrDefault(emptyList())
         }.flatten()
     }
@@ -271,7 +271,7 @@ class StremioRepository(prefs: SharedPreferences?) {
                 val encoded = java.net.URLEncoder.encode(ref.id, "UTF-8")
                 val url = withQuery("${addon.base}/subtitles/${ref.type}/$encoded.json", addon.querySuffix)
                 runCatching {
-                    app.get(url, timeout = 10L).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
+                    app.get(url, timeout = 15L).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
                 }.getOrDefault(emptyList()).mapNotNull(::toRemoteSubtitle)
             }
         }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }

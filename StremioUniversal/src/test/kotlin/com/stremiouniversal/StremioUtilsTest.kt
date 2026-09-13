@@ -124,6 +124,36 @@ class StremioUtilsTest {
     }
 
     @Test
+    fun `addon lines accept bare urls and legacy names`() {
+        val parsed = parseAddonLines(
+            listOf(
+                "https://manifest.desitvhub.eu.org/manifest.json",
+                "DesiFlix|https://manifest.desitvhub.eu.org/manifest.json",
+                "  ",
+                "notaurl"
+            )
+        )
+        assertEquals(2, parsed.size)
+        assertEquals("", parsed[0].name)
+        assertEquals("https://manifest.desitvhub.eu.org/manifest.json", parsed[0].manifestUrl)
+        assertEquals("DesiFlix", parsed[1].name)
+        assertEquals("https://manifest.desitvhub.eu.org/manifest.json", displayAddonLine(parsed[0]))
+        assertEquals(
+            "DesiFlix|https://manifest.desitvhub.eu.org/manifest.json",
+            displayAddonLine(parsed[1])
+        )
+    }
+
+    @Test
+    fun `referer fallback covers hotlink-protected cdn`() {
+        assertEquals(
+            "https://www.gillitv.live/",
+            refererOverride("https://58a49ee706238.streamlock.net/uploads/x.mp4")
+        )
+        assertNull(refererOverride("https://cdn.example.com/x.mp4"))
+    }
+
+    @Test
     fun `stream types expand per content kind`() {
         assertEquals(listOf("movie"), streamTypesFor("movie"))
         assertEquals(listOf("series"), streamTypesFor("series"))
