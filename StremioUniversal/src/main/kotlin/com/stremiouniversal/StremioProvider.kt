@@ -27,7 +27,7 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     override var mainUrl = ""
-    override var name = "StremioUniversal"
+    override var name = "StremioCS"
     override val hasMainPage = true
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Others)
@@ -115,16 +115,14 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         result.youtubeIds.forEach { ytId ->
             resultOr(Unit) { loadExtractor("https://www.youtube.com/watch?v=$ytId", subtitleCallback, callback) }
         }
-        if (repository.subtitlesEnabled()) {
-            val remote = resultOr(emptyList()) { repository.subtitlesFor(ref) }
-            (remote + result.inlineSubtitles).distinctBy { it.url }.forEach { sub ->
-                subtitleCallback(
-                    newSubtitleFile(
-                        SubtitleHelper.fromTagToEnglishLanguageName(sub.lang) ?: sub.lang,
-                        sub.url
-                    )
+        val remote = resultOr(emptyList()) { repository.subtitlesFor(ref) }
+        (remote + result.inlineSubtitles).distinctBy { it.url }.forEach { sub ->
+            subtitleCallback(
+                newSubtitleFile(
+                    SubtitleHelper.fromTagToEnglishLanguageName(sub.lang) ?: sub.lang,
+                    sub.url
                 )
-            }
+            )
         }
         return true
     }

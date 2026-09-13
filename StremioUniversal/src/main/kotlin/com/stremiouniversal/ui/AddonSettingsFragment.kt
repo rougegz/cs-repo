@@ -49,10 +49,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         rowsBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         root.addView(rowsBox)
         root.addView(addRow(ctx))
-        root.addView(sectionLabel(ctx, "Options"))
-        root.addView(switchRow(ctx, "External subtitles", repository.subtitlesEnabled()) { enabled ->
-            repository.setSubtitlesEnabled(enabled)
-        })
         rebuildRows(ctx)
         return ScrollView(ctx).apply { addView(root) }
     }
@@ -150,30 +146,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                     rebuildRows(ctx)
                 }
             })
-        }
-    }
-
-    private fun switchRow(ctx: Context, label: String, checked: Boolean, onToggle: (Boolean) -> Unit): LinearLayout {
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 12, 0, 12)
-            addView(TextView(ctx).apply {
-                text = label
-                textSize = 16f
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            addView(SwitchMaterial(ctx).apply {
-                isChecked = checked
-                setOnCheckedChangeListener { _, isChecked -> onToggle(isChecked) }
-            })
-        }
-    }
-
-    private fun sectionLabel(ctx: Context, text: String): TextView {
-        return TextView(ctx).apply {
-            this.text = text
-            textSize = 14f
-            setPadding(0, 16, 0, 0)
         }
     }
 

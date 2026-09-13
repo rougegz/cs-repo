@@ -3,16 +3,17 @@ import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
-version = 9
+version = 1
 
 cloudstream {
     description = """
-        StremioUniversal — every Stremio addon in one provider: all catalogues, all streams, search and subtitles, in your addon order.
+        StremioCS — every Stremio addon in one provider: all catalogues, all streams, search and subtitles, in your addon order.
     """.trimIndent()
     authors = listOf("rougegz")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
     language = "en"
+    iconUrl = "https://raw.githubusercontent.com/Stremio/stremio-web/development/assets/images/stremio_symbol.png"
 }
 
 android {

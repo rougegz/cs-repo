@@ -12,7 +12,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val KEY_ADDONS = "stremio_addons"
-private const val KEY_SUBTITLES = "external_subs"
 private const val MANIFEST_TTL_MS = 24L * 60 * 60 * 1000
 
 internal val BUILT_IN_ADDONS = listOf(
@@ -52,12 +51,6 @@ class StremioRepository(prefs: SharedPreferences?) {
         }
         prefs?.edit()?.putString(KEY_ADDONS, arr.toString())?.apply()
         manifests.clear()
-    }
-
-    fun subtitlesEnabled(): Boolean = prefs?.getBoolean(KEY_SUBTITLES, true) ?: true
-
-    fun setSubtitlesEnabled(enabled: Boolean) {
-        prefs?.edit()?.putBoolean(KEY_SUBTITLES, enabled)?.apply()
     }
 
     suspend fun configuredAddons(): List<ConfiguredAddon> = supervisorScope {
