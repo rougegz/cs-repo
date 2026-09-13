@@ -187,6 +187,15 @@ class StremioUtilsTest {
     }
 
     @Test
+    fun `youtube ids accept raw ids and urls only`() {
+        assertEquals("dQw4w9WgXcQ", youtubeIdOf("dQw4w9WgXcQ"))
+        assertEquals("dQw4w9WgXcQ", youtubeIdOf("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10"))
+        assertEquals("dQw4w9WgXcQ", youtubeIdOf("https://youtu.be/dQw4w9WgXcQ"))
+        assertNull(youtubeIdOf("https://vimeo.com/123456"))
+        assertNull(youtubeIdOf(""))
+    }
+
+    @Test
     fun `link ref survives json round trip`() {
         val ref = LinkRef("https://addon.example", "series", "dsx:e:abc:1:2")
         val back = parseLinkRef(ref.toJsonString())

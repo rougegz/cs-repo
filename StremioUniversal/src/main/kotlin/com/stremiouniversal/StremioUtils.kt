@@ -8,6 +8,7 @@ const val MAX_SEARCH_RESULTS = 60
 const val MAX_ITEMS_PER_ROW = 40
 const val MAX_CATALOGS_PER_ADDON = 30
 const val FILTER_CATALOGS_PER_ADDON = 6
+const val NATIVE_SEARCH_MIN = 20
 
 private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv")
 
@@ -34,8 +35,6 @@ fun manifestQuery(manifestUrl: String): String =
 
 fun withQuery(url: String, suffix: String): String = url + suffix
 
-fun isLiveType(type: String?): Boolean = type?.lowercase() in LIVE_TYPES
-
 fun streamTypesFor(type: String): List<String> {
     val t = type.lowercase()
     return when (t) {
@@ -53,6 +52,13 @@ fun normalizeContentId(id: String): String {
         clean.isNotEmpty() && clean.all { it.isDigit() } -> "tmdb:$clean"
         else -> clean
     }
+}
+
+fun youtubeIdOf(source: String): String? {
+    val trimmed = source.trim()
+    if (trimmed.matches(Regex("^[A-Za-z0-9_-]{11}$"))) return trimmed
+    Regex("[?&]v=([A-Za-z0-9_-]{11})").find(trimmed)?.groupValues?.get(1)?.let { return it }
+    return Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(trimmed)?.groupValues?.get(1)
 }
 
 fun fixPosterUrl(poster: String?): String? {
@@ -95,7 +101,7 @@ private fun seedersOf(label: String): Int {
         .find(label)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 }
 
-fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, extraTrackers: List<String> = emptyList()): String? {
+fun buildMagnet(infoHash: String?, name: String?, sources: List<String>): String? {
     val hash = infoHash.orEmpty().replace(Regex("[^a-fA-F0-9]"), "").lowercase()
     if (hash.length != 40) return null
     return buildString {
@@ -103,7 +109,7 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, extraTr
         if (!name.isNullOrBlank()) {
             append("&dn=").append(java.net.URLEncoder.encode(name.trim().take(120), "UTF-8"))
         }
-        val trackers = FALLBACK_TRACKERS + extraTrackers +
+        val trackers = FALLBACK_TRACKERS +
             sources.mapNotNull {
                 when {
                     it.startsWith("tracker:") -> it.removePrefix("tracker:")

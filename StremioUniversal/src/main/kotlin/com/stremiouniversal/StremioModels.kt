@@ -76,7 +76,6 @@ data class RemoteSubtitle(
 )
 
 data class ConfiguredAddon(
-    val config: AddonConfig,
     val order: Int,
     val displayName: String,
     val base: String,
@@ -86,13 +85,11 @@ data class ConfiguredAddon(
     val hasCatalog: Boolean,
     val hasStream: Boolean,
     val hasMeta: Boolean,
-    val hasSubtitles: Boolean,
-    val isLive: Boolean
+    val hasSubtitles: Boolean
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class StremioManifest(
-    val id: String? = null,
     val name: String? = null,
     val types: List<String> = emptyList(),
     val idPrefixes: List<String> = emptyList(),
@@ -102,7 +99,7 @@ data class StremioManifest(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class StremioCatalog(
-    var name: String? = null,
+    val name: String? = null,
     val id: String = "",
     val type: String? = null,
     val types: MutableList<String> = mutableListOf(),
@@ -141,8 +138,7 @@ data class CatalogEntry(
     val cast: JsonNode? = null,
     @JsonProperty("trailers") val trailers: List<StremioTrailer> = emptyList(),
     @JsonProperty("trailerStreams") val trailerStreams: List<TrailerStream> = emptyList(),
-    @JsonProperty("year") val year: JsonNode? = null,
-    val links: List<StremioLink> = emptyList()
+    @JsonProperty("year") val year: JsonNode? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -160,21 +156,12 @@ data class StremioVideo(
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class StremioTrailer(
-    val source: String? = null,
-    val type: String? = null
+    val source: String? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TrailerStream(
-    val ytId: String? = null,
-    val title: String? = null
-)
-
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class StremioLink(
-    val name: String? = null,
-    val category: String? = null,
-    val url: String? = null
+    val ytId: String? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -189,7 +176,6 @@ data class StremioStream(
     val url: String? = null,
     val description: String? = null,
     val ytId: String? = null,
-    val externalUrl: String? = null,
     val behaviorHints: BehaviorHints? = null,
     val infoHash: String? = null,
     val fileIdx: Int? = null,
@@ -202,8 +188,7 @@ data class StremioStream(
 data class BehaviorHints(
     val proxyHeaders: ProxyHeaders? = null,
     val headers: Map<String, String>? = null,
-    val filename: String? = null,
-    val videoSize: Long? = null
+    val filename: String? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -214,8 +199,7 @@ data class ProxyHeaders(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class StremioSubtitle(
     val url: String? = null,
-    val lang: String? = null,
-    val id: String? = null
+    val lang: String? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)

@@ -6,6 +6,8 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
 import org.json.JSONArray
@@ -18,6 +20,14 @@ private const val MANIFEST_TTL_MS = 24L * 60 * 60 * 1000
 private val BUILT_IN_ADDONS = listOf(
     AddonConfig("DesiFlix", "https://manifest.desitvhub.eu.org/manifest.json")
 )
+
+private suspend fun <T> Deferred<T>.awaitOrNull(): T? = try {
+    await()
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    null
+}
 
 class StremioRepository(prefs: SharedPreferences?) {
     private val prefs: SharedPreferences? = prefs
@@ -60,7 +70,7 @@ class StremioRepository(prefs: SharedPreferences?) {
                 val manifest = manifestOf(config.manifestUrl) ?: return@async null
                 describe(config, order, manifest)
             }
-        }.mapNotNull { runCatching { it.await() }.getOrNull() }
+        }.mapNotNull { it.awaitOrNull() }
     }
 
     private suspend fun manifestOf(url: String): StremioManifest? {
@@ -80,10 +90,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             if (catalog.type != null) listOf(catalog)
             else catalog.types.map { type -> catalog.copy(type = type, types = mutableListOf(type)) }
         }.filter { it.id.isNotEmpty() && it.type != null }.take(MAX_CATALOGS_PER_ADDON)
-        val types = manifest.types.map { it.lowercase() }
-        val live = types.any(::isLiveType) || catalogs.any { isLiveType(it.type) }
         return ConfiguredAddon(
-            config = config,
             order = order,
             displayName = manifest.name?.trim()?.takeIf { it.isNotEmpty() }
                 ?: config.name.ifEmpty { "Addon ${order + 1}" },
@@ -94,8 +101,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             hasCatalog = hasResource(manifest, "catalog") || catalogs.isNotEmpty(),
             hasStream = hasResource(manifest, "stream"),
             hasMeta = hasResource(manifest, "meta"),
-            hasSubtitles = hasResource(manifest, "subtitles"),
-            isLive = live
+            hasSubtitles = hasResource(manifest, "subtitles")
         )
     }
 
@@ -131,9 +137,9 @@ class StremioRepository(prefs: SharedPreferences?) {
                 addon.catalogs
                     .filter { catalog -> !isSearchCatalog(catalog) }
                     .map { catalog -> async { catalogRow(addon, catalog, skip) } }
-                    .mapNotNull { runCatching { it.await() }.getOrNull() }
+                    .mapNotNull { it.awaitOrNull() }
             }
-        }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }
+        }.flatMap { it.awaitOrNull() ?: emptyList() }
     }
 
     private suspend fun catalogMetas(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): List<CatalogEntry> {
@@ -162,11 +168,11 @@ class StremioRepository(prefs: SharedPreferences?) {
             async {
                 addon.catalogs.filter(::supportsSearch).map { catalog ->
                     async { searchCatalog(addon, catalog, q) }
-                }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }
+                }.flatMap { it.awaitOrNull() ?: emptyList() }
             }
-        }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }
+        }.flatMap { it.awaitOrNull() ?: emptyList() }
             .distinctBy { "${it.type}:${it.id}" }
-        if (native.size >= 20) return@supervisorScope native.take(MAX_SEARCH_RESULTS)
+        if (native.size >= NATIVE_SEARCH_MIN) return@supervisorScope native.take(MAX_SEARCH_RESULTS)
         val filtered = addons.map { addon ->
             async {
                 addon.catalogs
@@ -179,9 +185,9 @@ class StremioRepository(prefs: SharedPreferences?) {
                                 .filter { matchesQuery(it, q) }
                                 .mapNotNull { it.toRef(addon, type) }
                         }
-                    }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }
+                    }.flatMap { it.awaitOrNull() ?: emptyList() }
             }
-        }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }
+        }.flatMap { it.awaitOrNull() ?: emptyList() }
         (native + filtered).distinctBy { "${it.type}:${it.id}" }.take(MAX_SEARCH_RESULTS)
     }
 
@@ -206,7 +212,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         return supervisorScope {
             addons.filter { it.hasMeta && it.base != ref.base }.map { addon ->
                 async { fetchMeta(addon, ref.type, ref.id)?.toDetails() }
-            }.mapNotNull { runCatching { it.await() }.getOrNull() }.firstOrNull()
+            }.mapNotNull { it.awaitOrNull() }.firstOrNull()
         }
     }
 
@@ -234,7 +240,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         }
         val perAddon = targets.map { addon ->
             async { addon to addonStreams(addon, ref) }
-        }.mapNotNull { runCatching { it.await() }.getOrNull() }
+        }.mapNotNull { it.awaitOrNull() }
         val links = sortAndDedupe(
             perAddon.flatMap { (addon, streams) ->
                 streams.mapNotNull { toStreamLink(it, addon.displayName, addon.order) }
@@ -269,7 +275,7 @@ class StremioRepository(prefs: SharedPreferences?) {
                     app.get(url, timeout = 15L).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
                 }.getOrDefault(emptyList()).mapNotNull(::toRemoteSubtitle)
             }
-        }.flatMap { runCatching { it.await() }.getOrDefault(emptyList()) }
+        }.flatMap { it.awaitOrNull() ?: emptyList() }
             .distinctBy { it.url }
             .take(MAX_SUBTITLES)
     }
@@ -308,7 +314,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             rating = imdbRating?.asText()?.toDoubleOrNull(),
             genres = (stringList(genres) + stringList(genre)).distinct().takeIf { it.isNotEmpty() }.orEmpty(),
             cast = stringList(cast),
-            trailerYoutubeIds = trailers.mapNotNull { it.source } +
+            trailerYoutubeIds = trailers.mapNotNull { it.source?.let(::youtubeIdOf) } +
                 trailerStreams.mapNotNull { it.ytId },
             videos = videos
         )
