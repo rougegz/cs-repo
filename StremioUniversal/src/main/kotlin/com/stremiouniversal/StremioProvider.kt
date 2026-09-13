@@ -19,8 +19,6 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newSubtitleFile
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.SubtitleHelper
@@ -57,10 +55,10 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             .mapNotNull { it.toSearchResponse() }
 
     override suspend fun load(url: String): LoadResponse? {
-        val ref = runCatching { parseJson<LinkRef>(url) }.getOrNull() ?: return null
+        val ref = runCatching { parseLinkRef(url) }.getOrNull() ?: return null
         val details = runCatching { repository.metaDetails(ref) }.getOrNull()
             ?: MetaDetails(ref.id, ref.type, ref.id, null, null, "", null, null, emptyList(), emptyList(), emptyList(), emptyList())
-        val payload = LinkRef(ref.base, details.type.ifEmpty { ref.type }, details.id).toJson()
+        val payload = LinkRef(ref.base, details.type.ifEmpty { ref.type }, details.id).toJsonString()
         val hasEpisodes = details.videos.isNotEmpty()
         val screenType = if (hasEpisodes) TvType.TvSeries else contentTypeOf(details.type, hasEpisodes)
         if (!hasEpisodes) {
@@ -77,7 +75,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             }
         }
         val episodes = details.videos.map { video ->
-            newEpisode(LinkRef(ref.base, details.type.ifEmpty { ref.type }, video.id).toJson()) {
+            newEpisode(LinkRef(ref.base, details.type.ifEmpty { ref.type }, video.id).toJsonString()) {
                 name = video.title
                 season = video.season
                 episode = video.episode
@@ -104,7 +102,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val ref = runCatching { parseJson<LinkRef>(data) }.getOrNull() ?: return false
+        val ref = runCatching { parseLinkRef(data) }.getOrNull() ?: return false
         val result = runCatching { repository.streamsFor(ref) }.getOrNull() ?: return false
         result.links.forEach { link ->
             callback(
@@ -136,7 +134,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
 
     private fun MetaRef.toSearchResponse(): SearchResponse? {
         if (id.isEmpty() || name.isEmpty()) return null
-        return newMovieSearchResponse(name, LinkRef(base, type, id).toJson(), contentTypeOf(type, false)) {
+        return newMovieSearchResponse(name, LinkRef(base, type, id).toJsonString(), contentTypeOf(type, false)) {
             posterUrl = poster
         }
     }
