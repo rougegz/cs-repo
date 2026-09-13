@@ -62,13 +62,21 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         val configs = repository.loadConfiguredAddons().toMutableList()
         val builtIns = BUILT_IN_ADDONS.map { it.manifestUrl }.toSet()
         configs.forEachIndexed { index, config ->
-            rowsBox.addView(addonRow(ctx, config, index, config.manifestUrl !in builtIns) { updated ->
-                configs[index] = updated
-                repository.saveAddons(configs)
-            } {
-                repository.saveAddons(configs.filterIndexed { i, _ -> i != index })
-                rebuildRows(ctx)
-            })
+            rowsBox.addView(
+                addonRow(
+                    ctx,
+                    config,
+                    deletable = config.manifestUrl !in builtIns,
+                    onToggle = { updated ->
+                        configs[index] = updated
+                        repository.saveAddons(configs)
+                    },
+                    onDelete = {
+                        repository.saveAddons(configs.filterIndexed { i, _ -> i != index })
+                        rebuildRows(ctx)
+                    }
+                )
+            )
             rowsBox.addView(divider(ctx))
         }
     }
@@ -76,7 +84,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
     private fun addonRow(
         ctx: Context,
         config: AddonConfig,
-        index: Int,
         deletable: Boolean,
         onToggle: (AddonConfig) -> Unit,
         onDelete: () -> Unit
