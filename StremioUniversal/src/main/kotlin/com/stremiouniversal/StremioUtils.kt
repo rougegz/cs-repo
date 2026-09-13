@@ -161,17 +161,15 @@ fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
     return url.substring(0, cut) to headers
 }
 
-fun parseAddonLines(lines: List<String>): List<AddonConfig> =
-    lines.map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { line ->
-        val url = line.substringAfter("|", line).trim()
-        if (!url.startsWith("http://") && !url.startsWith("https://")) return@mapNotNull null
-        val name = line.substringBefore("|").trim().takeIf { it != url }.orEmpty()
-        AddonConfig(name, url)
-    }
+fun parseAddonUrl(raw: String): String? {
+    val line = raw.trim()
+    if (line.isEmpty()) return null
+    val url = line.substringAfter("|", line).trim()
+    return url.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+}
 
-fun displayAddonLine(config: AddonConfig): String =
-    if (config.name.isEmpty() || config.name == config.manifestUrl) config.manifestUrl
-    else "${config.name}|${config.manifestUrl}"
+fun toAddonConfigs(urls: List<String>): List<AddonConfig> =
+    urls.mapNotNull(::parseAddonUrl).distinct().map { AddonConfig("", it) }
 
 fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): StreamLink? {
     val direct = stream.url?.trim().orEmpty()

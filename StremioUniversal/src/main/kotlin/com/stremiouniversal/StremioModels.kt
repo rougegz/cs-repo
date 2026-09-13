@@ -6,7 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode
 
 data class AddonConfig(
     val name: String,
-    val manifestUrl: String
+    val manifestUrl: String,
+    val enabled: Boolean = true
 )
 
 data class LinkRef(

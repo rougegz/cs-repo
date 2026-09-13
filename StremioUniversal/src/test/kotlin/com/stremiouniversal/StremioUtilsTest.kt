@@ -225,24 +225,22 @@ class StremioUtilsTest {
     }
 
     @Test
-    fun `addon lines accept bare urls and legacy names`() {
-        val parsed = parseAddonLines(
-            listOf(
-                "https://manifest.desitvhub.eu.org/manifest.json",
-                "DesiFlix|https://manifest.desitvhub.eu.org/manifest.json",
-                "  ",
-                "notaurl"
-            )
-        )
-        assertEquals(2, parsed.size)
-        assertEquals("", parsed[0].name)
-        assertEquals("https://manifest.desitvhub.eu.org/manifest.json", parsed[0].manifestUrl)
-        assertEquals("DesiFlix", parsed[1].name)
-        assertEquals("https://manifest.desitvhub.eu.org/manifest.json", displayAddonLine(parsed[0]))
+    fun `addon urls parse bare with legacy pipe tolerated`() {
         assertEquals(
-            "DesiFlix|https://manifest.desitvhub.eu.org/manifest.json",
-            displayAddonLine(parsed[1])
+            "https://manifest.desitvhub.eu.org/manifest.json",
+            parseAddonUrl("https://manifest.desitvhub.eu.org/manifest.json")
         )
+        assertEquals(
+            "https://manifest.desitvhub.eu.org/manifest.json",
+            parseAddonUrl("DesiFlix|https://manifest.desitvhub.eu.org/manifest.json")
+        )
+        assertNull(parseAddonUrl("notaurl"))
+        assertNull(parseAddonUrl("  "))
+        val configs = toAddonConfigs(
+            listOf("https://a.example/manifest.json", "https://a.example/manifest.json")
+        )
+        assertEquals(1, configs.size)
+        assertTrue(configs[0].enabled)
     }
 
     @Test

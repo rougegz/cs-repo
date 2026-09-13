@@ -15,7 +15,7 @@ private const val KEY_ADDONS = "stremio_addons"
 private const val KEY_SUBTITLES = "external_subs"
 private const val MANIFEST_TTL_MS = 24L * 60 * 60 * 1000
 
-private val BUILT_IN_ADDONS = listOf(
+internal val BUILT_IN_ADDONS = listOf(
     AddonConfig("DesiFlix", "https://manifest.desitvhub.eu.org/manifest.json")
 )
 
@@ -32,18 +32,24 @@ class StremioRepository(prefs: SharedPreferences?) {
         return runCatching {
             JSONArray(raw).let { arr ->
                 (0 until arr.length()).mapNotNull { i ->
-                    val url = arr.optJSONObject(i)?.optString("url").orEmpty().trim()
-                    val name = arr.optJSONObject(i)?.optString("name").orEmpty().trim()
+                    val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val url = obj.optString("url").trim()
+                    val name = obj.optString("name").trim()
                     url.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-                        ?.let { AddonConfig(name, it) }
+                        ?.let { AddonConfig(name, it, obj.optBoolean("enabled", true)) }
                 }
             }.ifEmpty { BUILT_IN_ADDONS }
         }.getOrDefault(BUILT_IN_ADDONS)
     }
 
+    fun loadEnabledAddons(): List<AddonConfig> =
+        loadConfiguredAddons().filter { it.enabled }
+
     fun saveAddons(configs: List<AddonConfig>) {
         val arr = JSONArray()
-        configs.forEach { arr.put(JSONObject().put("name", it.name).put("url", it.manifestUrl)) }
+        configs.forEach {
+            arr.put(JSONObject().put("name", it.name).put("url", it.manifestUrl).put("enabled", it.enabled))
+        }
         prefs?.edit()?.putString(KEY_ADDONS, arr.toString())?.apply()
         manifests.clear()
     }
@@ -55,7 +61,7 @@ class StremioRepository(prefs: SharedPreferences?) {
     }
 
     suspend fun configuredAddons(): List<ConfiguredAddon> = supervisorScope {
-        loadConfiguredAddons().mapIndexed { order, config ->
+        loadEnabledAddons().mapIndexed { order, config ->
             async {
                 val manifest = manifestOf(config.manifestUrl) ?: return@async null
                 describe(config, order, manifest)
