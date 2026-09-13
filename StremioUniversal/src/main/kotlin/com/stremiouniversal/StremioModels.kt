@@ -193,6 +193,7 @@ data class StremioStream(
     val behaviorHints: BehaviorHints? = null,
     val infoHash: String? = null,
     val fileIdx: Int? = null,
+    val headers: Map<String, String>? = null,
     val sources: List<String> = emptyList(),
     val subtitles: List<StremioSubtitle> = emptyList()
 )

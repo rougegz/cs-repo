@@ -22,8 +22,12 @@ private val FALLBACK_TRACKERS = listOf(
     "http://tracker.openbittorrent.com:80/announce"
 )
 
-fun manifestBase(manifestUrl: String): String =
-    manifestUrl.substringBefore("?").replace(Regex("/manifest\\.json.*$"), "").trimEnd('/')
+fun manifestBase(manifestUrl: String): String {
+    var base = manifestUrl.trim().replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
+    base = base.substringBefore("?")
+    base = base.replace(Regex("/(manifest\\.json.*|streams?|catalogs?)/?$"), "").trimEnd('/')
+    return base
+}
 
 fun manifestQuery(manifestUrl: String): String =
     if (manifestUrl.contains("?")) "?" + manifestUrl.substringAfter("?") else ""
@@ -36,7 +40,7 @@ fun streamTypesFor(type: String): List<String> {
     val t = type.lowercase()
     return when (t) {
         "movie" -> listOf("movie")
-        "series", "anime" -> listOf("series")
+        "series", "anime", "tv", "show" -> listOf("series")
         in LIVE_TYPES -> listOf(t)
         else -> listOf(t, "movie", "series").distinct()
     }
@@ -100,7 +104,13 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, extraTr
             append("&dn=").append(java.net.URLEncoder.encode(name.trim().take(120), "UTF-8"))
         }
         val trackers = FALLBACK_TRACKERS + extraTrackers +
-            sources.filter { it.startsWith("tracker:") }.map { it.removePrefix("tracker:") }
+            sources.mapNotNull {
+                when {
+                    it.startsWith("tracker:") -> it.removePrefix("tracker:")
+                    it.startsWith("dht:") -> it.removePrefix("dht:")
+                    else -> null
+                }
+            }
         trackers.distinct().forEach { tracker ->
             append("&tr=").append(java.net.URLEncoder.encode(tracker, "UTF-8"))
         }
@@ -109,9 +119,23 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, extraTr
 
 fun mergeStreamHeaders(stream: StremioStream): Map<String, String> {
     val merged = mutableMapOf<String, String>()
+    stream.headers?.forEach { (k, v) -> merged[k] = v }
     stream.behaviorHints?.headers?.forEach { (k, v) -> merged[k] = v }
     stream.behaviorHints?.proxyHeaders?.request?.forEach { (k, v) -> merged[k] = v }
     return merged
+}
+
+fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
+    val cut = url.indexOf('|')
+    if (cut == -1) return url to emptyMap()
+    val params = url.substring(cut + 1).split('&')
+    if (params.isEmpty() || params.any { !it.contains('=') }) return url to emptyMap()
+    val headers = params.mapNotNull { part ->
+        val key = part.substringBefore('=').trim()
+        if (key.isEmpty()) null else key to part.substringAfter('=')
+    }.toMap()
+    if (headers.isEmpty()) return url to emptyMap()
+    return url.substring(0, cut) to headers
 }
 
 fun parseAddonLines(lines: List<String>): List<AddonConfig> =
@@ -132,11 +156,14 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
     val body = stream.description?.trim().orEmpty().ifEmpty { stream.title?.trim().orEmpty() }
     val text = listOfNotNull(stream.name?.trim(), body).filter { it.isNotEmpty() }.joinToString(" ")
     val low = text.lowercase()
+    var kodiHeaders: Map<String, String> = emptyMap()
     val url = when {
         direct.startsWith("http://") || direct.startsWith("https://") -> {
-            val path = direct.replace(Regex("^https?://[^/]+"), "")
+            val (clean, kodi) = splitKodiHeaders(direct)
+            val path = clean.replace(Regex("^https?://[^/]+"), "")
             if (Regex("/(login|logout|signin|signup)([._?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(path)) return null
-            direct
+            kodiHeaders = kodi
+            clean
         }
         direct.startsWith("magnet:") -> direct
         hash.isNotEmpty() -> buildMagnet(
@@ -158,7 +185,7 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
         source = addonName,
         title = title,
         qualityTag = resolution,
-        headers = mergeStreamHeaders(stream),
+        headers = mergeStreamHeaders(stream) + kodiHeaders,
         resolutionRank = rank,
         seeders = seedersOf(low),
         addonOrder = addonOrder,
@@ -171,9 +198,9 @@ fun sortAndDedupe(links: List<StreamLink>): List<StreamLink> {
     val unique = links.filter { link ->
         val hash = Regex("urn:btih:([a-fA-F0-9]{40})", RegexOption.IGNORE_CASE)
             .find(link.url)?.groupValues?.get(1)?.lowercase()
-        val key = if (hash != null) "$hash:${link.fileIdx}"
+        val identity = if (hash != null) "$hash:${link.fileIdx}"
         else link.url.replace(Regex("^https?://"), "").trimEnd('/').substringBefore("#").lowercase()
-        key.isNotEmpty() && seen.add(key)
+        identity.isNotEmpty() && seen.add("${link.addonOrder}|$identity")
     }
     return unique.sortedWith(
         compareByDescending(StreamLink::resolutionRank)

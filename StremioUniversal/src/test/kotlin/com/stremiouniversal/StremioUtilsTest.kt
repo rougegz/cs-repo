@@ -69,7 +69,60 @@ class StremioUtilsTest {
     }
 
     @Test
-    fun `dedupe keeps multi-file torrents apart and drops exact dups`() {
+    fun `dedupe is per addon like clients group streams`() {
+        fun link(url: String, order: Int) =
+            StreamLink(url, "s", "t", null, emptyMap(), 2, 0, order, null)
+        val out = sortAndDedupe(
+            listOf(
+                link("https://c.example/f.mp4", 0),
+                link("https://c.example/f.mp4", 0),
+                link("https://c.example/f.mp4", 1)
+            )
+        )
+        assertEquals(2, out.size)
+    }
+
+    @Test
+    fun `transport urls normalize like clients`() {
+        assertEquals("https://a.example/addon", manifestBase("stremio://a.example/addon/manifest.json"))
+        assertEquals("https://a.example/addon", manifestBase("https://a.example/addon/stream/"))
+        assertEquals("https://a.example/addon", manifestBase("https://a.example/addon/catalog?token=x"))
+        assertEquals(listOf("series"), streamTypesFor("tv"))
+        assertEquals(listOf("series"), streamTypesFor("show"))
+    }
+
+    @Test
+    fun `headers merge with proxy winning and kodi suffix parsed`() {
+        val link = toStreamLink(
+            StremioStream(
+                url = "https://cdn.example/x.mp4|Referer=https://kodi.example/&X-A=1",
+                headers = mapOf("Referer" to "https://stream.example/", "X-A" to "0"),
+                behaviorHints = BehaviorHints(headers = mapOf("X-B" to "2"))
+            ),
+            "A",
+            0
+        )!!
+        assertEquals("https://cdn.example/x.mp4", link.url)
+        assertEquals("https://kodi.example/", link.headers["Referer"])
+        assertEquals("1", link.headers["X-A"])
+        assertEquals("2", link.headers["X-B"])
+        val kept = toStreamLink(
+            StremioStream(url = "https://cdn.example/a|b/c.mp4"),
+            "A",
+            0
+        )!!
+        assertEquals("https://cdn.example/a|b/c.mp4", kept.url)
+        assertTrue(kept.headers.isEmpty())
+    }
+
+    @Test
+    fun `dht sources join magnets like core`() {
+        val magnet = buildMagnet("c".repeat(40), "N", listOf("dht:aaaabbbbcccc", "tracker:udp://t.example:1/x"))
+        assertTrue(magnet!!.contains("tr=aaaabbbbcccc"))
+        assertTrue(magnet.contains("tr=udp%3A%2F%2Ft.example%3A1%2Fx"))
+    }
+    @Test
+    fun `dedupe keeps multi-file torrents apart and drops same-addon dups`() {
         fun link(url: String, fileIdx: Int? = null) =
             StreamLink(url, "s", "t", null, emptyMap(), 2, 0, 0, fileIdx)
         val hash = "b".repeat(40)
