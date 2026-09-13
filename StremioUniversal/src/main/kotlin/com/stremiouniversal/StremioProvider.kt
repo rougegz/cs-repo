@@ -35,7 +35,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     override val mainPage = mainPageOf("Stremio" to "stremio")
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val rows = runCatching { repository.catalogRows(page) }.getOrDefault(emptyList())
+        val rows = resultOr(emptyList()) { repository.catalogRows(page) }
         return newHomePageResponse(
             rows.map { row ->
                 HomePageList(
@@ -48,19 +48,19 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse>? =
-        runCatching { search(query) }.getOrNull()
+        resultOr(null) { search(query) }
 
     override suspend fun search(query: String): List<SearchResponse> =
-        runCatching { repository.searchAll(query) }.getOrDefault(emptyList())
+        resultOr(emptyList()) { repository.searchAll(query) }
             .mapNotNull { it.toSearchResponse() }
 
     override suspend fun load(url: String): LoadResponse? {
-        val ref = runCatching { parseLinkRef(url) }.getOrNull() ?: return null
-        val details = runCatching { repository.metaDetails(ref) }.getOrNull()
+        val ref = parseLinkRef(url) ?: return null
+        val details = resultOr(null) { repository.metaDetails(ref) }
             ?: MetaDetails(ref.id, ref.type, ref.id, null, null, "", null, null, emptyList(), emptyList(), emptyList(), emptyList())
         val payload = LinkRef(ref.base, details.type.ifEmpty { ref.type }, details.id).toJsonString()
         val hasEpisodes = details.videos.isNotEmpty()
-        val screenType = if (hasEpisodes) TvType.TvSeries else contentTypeOf(details.type, hasEpisodes)
+        val screenType = if (hasEpisodes) TvType.TvSeries else contentTypeOf(details.type)
         if (!hasEpisodes) {
             return newMovieLoadResponse(details.name, payload, screenType, payload) {
                 posterUrl = details.poster
@@ -70,7 +70,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
                 tags = details.genres.takeIf { it.isNotEmpty() }
                 score = Score.from10(details.rating?.toString())
                 addActors(details.cast)
-                details.id.takeIf { it.matches(Regex("^tt\\d+")) }?.let { addImdbId(it) }
+                details.id.takeIf { it.matches(Regex("^tt\\d+$")) }?.let { addImdbId(it) }
                 details.trailerYoutubeIds.firstOrNull()?.let { addTrailer("https://www.youtube.com/watch?v=$it") }
             }
         }
@@ -91,7 +91,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             tags = details.genres.takeIf { it.isNotEmpty() }
             score = Score.from10(details.rating?.toString())
             addActors(details.cast)
-            details.id.takeIf { it.matches(Regex("^tt\\d+")) }?.let { addImdbId(it) }
+            details.id.takeIf { it.matches(Regex("^tt\\d+$")) }?.let { addImdbId(it) }
             details.trailerYoutubeIds.firstOrNull()?.let { addTrailer("https://www.youtube.com/watch?v=$it") }
         }
     }
@@ -102,8 +102,8 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val ref = runCatching { parseLinkRef(data) }.getOrNull() ?: return false
-        val result = runCatching { repository.streamsFor(ref) }.getOrNull() ?: return false
+        val ref = parseLinkRef(data) ?: return false
+        val result = resultOr(null) { repository.streamsFor(ref) } ?: return false
         result.links.forEach { link ->
             callback(
                 newExtractorLink(link.source, link.title, link.url, INFER_TYPE) {
@@ -113,10 +113,10 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             )
         }
         result.youtubeIds.forEach { ytId ->
-            runCatching { loadExtractor("https://www.youtube.com/watch?v=$ytId", subtitleCallback, callback) }
+            resultOr(Unit) { loadExtractor("https://www.youtube.com/watch?v=$ytId", subtitleCallback, callback) }
         }
         if (repository.subtitlesEnabled()) {
-            val remote = runCatching { repository.subtitlesFor(ref) }.getOrDefault(emptyList())
+            val remote = resultOr(emptyList()) { repository.subtitlesFor(ref) }
             (remote + result.inlineSubtitles).distinctBy { it.url }.forEach { sub ->
                 subtitleCallback(
                     newSubtitleFile(
@@ -131,14 +131,14 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
 
     private fun MetaRef.toSearchResponse(): SearchResponse? {
         if (id.isEmpty() || name.isEmpty()) return null
-        return newMovieSearchResponse(name, LinkRef(base, type, id).toJsonString(), contentTypeOf(type, false)) {
+        return newMovieSearchResponse(name, LinkRef(base, type, id).toJsonString(), contentTypeOf(type)) {
             posterUrl = poster
         }
     }
 
-    private fun contentTypeOf(type: String, hasVideos: Boolean): TvType = when (type.lowercase()) {
+    private fun contentTypeOf(type: String): TvType = when (type.lowercase()) {
         "movie", "short" -> TvType.Movie
         "series", "anime" -> TvType.TvSeries
-        else -> if (hasVideos) TvType.TvSeries else TvType.Movie
+        else -> TvType.Movie
     }
 }

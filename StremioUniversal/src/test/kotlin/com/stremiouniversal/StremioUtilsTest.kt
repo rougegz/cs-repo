@@ -167,6 +167,27 @@ class StremioUtilsTest {
     }
 
     @Test
+    fun `years parse from numbers and date strings`() {
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        assertEquals(2019, yearOf(mapper.readTree("2019")))
+        assertEquals(2019, yearOf(mapper.readTree("\"2019-05-01\"")))
+        assertEquals(2026, yearOf(mapper.readTree("\"2026\"")))
+        assertNull(yearOf(mapper.readTree("null")))
+        assertNull(yearOf(null))
+    }
+
+    @Test
+    fun `meta prefers id match then single result`() {
+        val multi = extractMetaEntry(
+            """{"metas":[{"id":"a","name":"A"},{"id":"b","name":"B"}]}""",
+            "zzz"
+        )
+        assertNull(multi)
+        val single = extractMetaEntry("""{"metas":[{"id":"a","name":"A"}]}""", "zzz")
+        assertEquals("A", single?.name)
+    }
+
+    @Test
     fun `manifest base and query split`() {
         assertEquals(
             "https://a.example/addon",

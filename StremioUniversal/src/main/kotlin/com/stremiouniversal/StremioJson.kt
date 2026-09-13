@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import kotlinx.coroutines.CancellationException
 
 private val codec: ObjectMapper by lazy {
     ObjectMapper().registerKotlinModule()
@@ -12,9 +13,13 @@ private val codec: ObjectMapper by lazy {
 
 fun LinkRef.toJsonString(): String = codec.writeValueAsString(this)
 
-fun parseLinkRef(json: String): LinkRef? = runCatching {
+fun parseLinkRef(json: String): LinkRef? = try {
     codec.readValue(json, LinkRef::class.java)
-}.getOrNull()
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    null
+}
 
 fun stringList(node: JsonNode?): List<String> {
     if (node == null || node.isNull) return emptyList()
@@ -28,9 +33,20 @@ fun stringList(node: JsonNode?): List<String> {
 }
 
 fun extractMetaEntry(body: String, id: String): CatalogEntry? {
-    val wrapped = runCatching { codec.readValue(body, CatalogResponse::class.java) }.getOrNull()
-    wrapped?.let { it.meta ?: it.metas?.firstOrNull { meta -> meta.id == id } ?: it.metas?.firstOrNull() }
+    val wrapped = try {
+        codec.readValue(body, CatalogResponse::class.java)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+    wrapped?.let { it.meta ?: it.metas?.firstOrNull { meta -> meta.id == id } ?: it.metas?.singleOrNull() }
         ?.takeIf { it.name.isNotEmpty() }?.let { return it }
-    return runCatching { codec.readValue(body, CatalogEntry::class.java) }.getOrNull()
-        ?.takeIf { it.id.isNotEmpty() && it.name.isNotEmpty() }
+    return try {
+        codec.readValue(body, CatalogEntry::class.java)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }?.takeIf { it.id.isNotEmpty() && it.name.isNotEmpty() }
 }

@@ -59,7 +59,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                 repository.saveAddons(configs)
                 repository.setSubtitlesEnabled(subtitles.isChecked)
                 Toast.makeText(ctx, "Saved ${configs.size} addons", Toast.LENGTH_SHORT).show()
-                dismiss()
+                dismissAllowingStateLoss()
             }
         })
         return ScrollView(ctx).apply { addView(box) }

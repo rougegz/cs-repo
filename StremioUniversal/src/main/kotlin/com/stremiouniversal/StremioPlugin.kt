@@ -12,7 +12,7 @@ class StremioPlugin : Plugin() {
         val prefs = context.getSharedPreferences("StremioUniversal", Context.MODE_PRIVATE)
         registerMainAPI(StremioProvider(StremioRepository(prefs)))
         openSettings = {
-            val activity = context as? AppCompatActivity
+            val activity = (context as? AppCompatActivity)?.takeUnless { it.isFinishing || it.isDestroyed }
             if (activity != null) {
                 AddonSettingsFragment().show(activity.supportFragmentManager, "StremioAddons")
             } else {

@@ -6,8 +6,6 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.supervisorScope
 import org.json.JSONArray
@@ -20,14 +18,6 @@ private const val MANIFEST_TTL_MS = 24L * 60 * 60 * 1000
 private val BUILT_IN_ADDONS = listOf(
     AddonConfig("DesiFlix", "https://manifest.desitvhub.eu.org/manifest.json")
 )
-
-private suspend fun <T> Deferred<T>.awaitOrNull(): T? = try {
-    await()
-} catch (e: CancellationException) {
-    throw e
-} catch (_: Exception) {
-    null
-}
 
 class StremioRepository(prefs: SharedPreferences?) {
     private val prefs: SharedPreferences? = prefs
@@ -70,17 +60,17 @@ class StremioRepository(prefs: SharedPreferences?) {
                 val manifest = manifestOf(config.manifestUrl) ?: return@async null
                 describe(config, order, manifest)
             }
-        }.mapNotNull { it.awaitOrNull() }
+        }.mapNotNull { resultOr(null) { it.await() } }
     }
 
     private suspend fun manifestOf(url: String): StremioManifest? {
         manifests[url]?.let { (at, manifest) ->
             if (System.currentTimeMillis() - at < MANIFEST_TTL_MS) return manifest
         }
-        return runCatching {
+        return resultOr(null) {
             app.get(url, timeout = 20L).parsedSafe<StremioManifest>()
                 ?.also { manifests[url] = TimedManifest(System.currentTimeMillis(), it) }
-        }.getOrNull() ?: manifests[url]?.manifest
+        } ?: manifests[url]?.manifest
     }
 
     private fun describe(config: AddonConfig, order: Int, manifest: StremioManifest): ConfiguredAddon? {
@@ -137,18 +127,18 @@ class StremioRepository(prefs: SharedPreferences?) {
                 addon.catalogs
                     .filter { catalog -> !isSearchCatalog(catalog) }
                     .map { catalog -> async { catalogRow(addon, catalog, skip) } }
-                    .mapNotNull { it.awaitOrNull() }
+                    .mapNotNull { resultOr(null) { it.await() } }
             }
-        }.flatMap { it.awaitOrNull() ?: emptyList() }
+        }.flatMap { resultOr(emptyList()) { it.await() } }
     }
 
     private suspend fun catalogMetas(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): List<CatalogEntry> {
         val type = catalog.type ?: return emptyList()
         val paging = if (skip > 0) "/skip=$skip" else ""
         val url = withQuery("${addon.base}/catalog/$type/${catalog.id}$paging.json", addon.querySuffix)
-        return runCatching {
+        return resultOr(emptyList()) {
             app.get(url, timeout = 30L).parsedSafe<CatalogResponse>()?.metas.orEmpty()
-        }.getOrDefault(emptyList())
+        }
     }
 
     private suspend fun catalogRow(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): CatalogRow? {
@@ -168,9 +158,9 @@ class StremioRepository(prefs: SharedPreferences?) {
             async {
                 addon.catalogs.filter(::supportsSearch).map { catalog ->
                     async { searchCatalog(addon, catalog, q) }
-                }.flatMap { it.awaitOrNull() ?: emptyList() }
+                }.flatMap { resultOr(emptyList()) { it.await() } }
             }
-        }.flatMap { it.awaitOrNull() ?: emptyList() }
+        }.flatMap { resultOr(emptyList()) { it.await() } }
             .distinctBy { "${it.type}:${it.id}" }
         if (native.size >= NATIVE_SEARCH_MIN) return@supervisorScope native.take(MAX_SEARCH_RESULTS)
         val filtered = addons.map { addon ->
@@ -185,9 +175,9 @@ class StremioRepository(prefs: SharedPreferences?) {
                                 .filter { matchesQuery(it, q) }
                                 .mapNotNull { it.toRef(addon, type) }
                         }
-                    }.flatMap { it.awaitOrNull() ?: emptyList() }
+                    }.flatMap { resultOr(emptyList()) { it.await() } }
             }
-        }.flatMap { it.awaitOrNull() ?: emptyList() }
+        }.flatMap { resultOr(emptyList()) { it.await() } }
         (native + filtered).distinctBy { "${it.type}:${it.id}" }.take(MAX_SEARCH_RESULTS)
     }
 
@@ -195,9 +185,9 @@ class StremioRepository(prefs: SharedPreferences?) {
         val type = catalog.type ?: return emptyList()
         val encoded = java.net.URLEncoder.encode(query, "UTF-8")
         val url = withQuery("${addon.base}/catalog/$type/${catalog.id}/search=$encoded.json", addon.querySuffix)
-        return runCatching {
+        return resultOr(emptyList()) {
             app.get(url, timeout = 30L).parsedSafe<CatalogResponse>()?.metas.orEmpty()
-        }.getOrDefault(emptyList()).mapNotNull { it.toRef(addon, type) }
+        }.mapNotNull { it.toRef(addon, type) }
     }
 
     suspend fun metaDetails(ref: LinkRef): MetaDetails? {
@@ -206,29 +196,29 @@ class StremioRepository(prefs: SharedPreferences?) {
         if (origin != null) {
             fetchMeta(origin, ref.type, ref.id)?.toDetails()?.let { return it }
         }
-        if (ref.id.matches(Regex("^tt\\d+"))) {
+        if (ref.id.matches(Regex("^tt\\d+$"))) {
             cinemetaMeta(ref.type, ref.id)?.toDetails()?.let { return it }
         }
         return supervisorScope {
             addons.filter { it.hasMeta && it.base != ref.base }.map { addon ->
                 async { fetchMeta(addon, ref.type, ref.id)?.toDetails() }
-            }.mapNotNull { it.awaitOrNull() }.firstOrNull()
+            }.mapNotNull { resultOr(null) { it.await() } }.firstOrNull()
         }
     }
 
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
         val encoded = java.net.URLEncoder.encode(id, "UTF-8")
         val url = withQuery("${addon.base}/meta/$type/$encoded.json", addon.querySuffix)
-        val body = runCatching { app.get(url, timeout = 20L).text }.getOrNull() ?: return null
+        val body = resultOr(null) { app.get(url, timeout = 20L).text } ?: return null
         return extractMetaEntry(body, id)
     }
 
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
-        return runCatching {
+        return resultOr(null) {
             app.get("https://v3-cinemeta.strem.io/meta/$kind/$id.json", timeout = 20L)
                 .parsedSafe<CatalogResponse>()?.meta
-        }.getOrNull()
+        }
     }
 
     suspend fun streamsFor(ref: LinkRef): StreamsResult = supervisorScope {
@@ -240,7 +230,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         }
         val perAddon = targets.map { addon ->
             async { addon to addonStreams(addon, ref) }
-        }.mapNotNull { it.awaitOrNull() }
+        }.mapNotNull { resultOr(null) { it.await() } }
         val links = sortAndDedupe(
             perAddon.flatMap { (addon, streams) ->
                 streams.mapNotNull { toStreamLink(it, addon.displayName, addon.order) }
@@ -260,9 +250,9 @@ class StremioRepository(prefs: SharedPreferences?) {
         return streamTypesFor(ref.type).amap { kind ->
             val encoded = java.net.URLEncoder.encode(ref.id, "UTF-8")
             val url = withQuery("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix)
-            runCatching {
+            resultOr(emptyList()) {
                 app.get(url, timeout = 60L).parsedSafe<StreamsResponse>()?.streams.orEmpty()
-            }.getOrDefault(emptyList())
+            }
         }.flatten()
     }
 
@@ -271,11 +261,11 @@ class StremioRepository(prefs: SharedPreferences?) {
             async {
                 val encoded = java.net.URLEncoder.encode(ref.id, "UTF-8")
                 val url = withQuery("${addon.base}/subtitles/${ref.type}/$encoded.json", addon.querySuffix)
-                runCatching {
+                resultOr(emptyList()) {
                     app.get(url, timeout = 15L).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
-                }.getOrDefault(emptyList()).mapNotNull(::toRemoteSubtitle)
+                }.mapNotNull(::toRemoteSubtitle)
             }
-        }.flatMap { it.awaitOrNull() ?: emptyList() }
+        }.flatMap { resultOr(emptyList()) { it.await() } }
             .distinctBy { it.url }
             .take(MAX_SUBTITLES)
     }
@@ -310,7 +300,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             poster = fixPosterUrl(poster),
             background = fixPosterUrl(background),
             description = stripHtml(description).take(1000),
-            year = year?.asText()?.toIntOrNull(),
+            year = yearOf(year),
             rating = imdbRating?.asText()?.toDoubleOrNull(),
             genres = (stringList(genres) + stringList(genre)).distinct().takeIf { it.isNotEmpty() }.orEmpty(),
             cast = stringList(cast),

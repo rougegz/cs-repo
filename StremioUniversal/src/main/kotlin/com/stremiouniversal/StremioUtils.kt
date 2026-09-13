@@ -1,6 +1,15 @@
 package com.stremiouniversal
 
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import kotlinx.coroutines.CancellationException
+
+suspend fun <T> resultOr(default: T, block: suspend () -> T): T = try {
+    block()
+} catch (e: CancellationException) {
+    throw e
+} catch (_: Exception) {
+    default
+}
 
 const val MAX_STREAMS = 180
 const val MAX_SUBTITLES = 12
@@ -52,6 +61,14 @@ fun normalizeContentId(id: String): String {
         clean.isNotEmpty() && clean.all { it.isDigit() } -> "tmdb:$clean"
         else -> clean
     }
+}
+
+fun yearOf(node: com.fasterxml.jackson.databind.JsonNode?): Int? {
+    if (node == null || node.isNull) return null
+    if (node.isNumber) return node.asInt().takeIf { it in 1900..2100 }
+    val text = node.asText().trim()
+    text.toIntOrNull()?.takeIf { it in 1900..2100 }?.let { return it }
+    return Regex("(19|20)\\d{2}").find(text)?.value?.toIntOrNull()
 }
 
 fun youtubeIdOf(source: String): String? {
