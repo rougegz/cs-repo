@@ -16,8 +16,7 @@ private const val KEY_SUBTITLES = "external_subs"
 private const val MANIFEST_TTL_MS = 24L * 60 * 60 * 1000
 
 private val BUILT_IN_ADDONS = listOf(
-    AddonConfig("Cinemeta", "https://v3-cinemeta.strem.io/manifest.json"),
-    AddonConfig("Torrentio", "https://torrentio.strem.fun/manifest.json")
+    AddonConfig("DesiFlix", "https://manifest.desitvhub.eu.org/manifest.json")
 )
 
 class StremioRepository(prefs: SharedPreferences?) {
