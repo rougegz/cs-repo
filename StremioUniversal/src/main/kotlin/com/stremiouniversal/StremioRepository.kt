@@ -213,10 +213,8 @@ class StremioRepository(prefs: SharedPreferences?) {
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
         val encoded = java.net.URLEncoder.encode(id, "UTF-8")
         val url = withQuery("${addon.base}/meta/$type/$encoded.json", addon.querySuffix)
-        return runCatching {
-            app.get(url, timeout = 20L).parsedSafe<CatalogResponse>()
-                ?.let { it.meta ?: it.metas?.firstOrNull { meta -> meta.id == id } ?: it.metas?.firstOrNull() }
-        }.getOrNull()
+        val body = runCatching { app.get(url, timeout = 20L).text }.getOrNull() ?: return null
+        return extractMetaEntry(body, id)
     }
 
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
@@ -307,9 +305,9 @@ class StremioRepository(prefs: SharedPreferences?) {
             background = fixPosterUrl(background),
             description = stripHtml(description).take(1000),
             year = year?.asText()?.toIntOrNull(),
-            rating = imdbRating?.toDoubleOrNull(),
-            genres = (genres + (genre ?: emptyList())).distinct().takeIf { it.isNotEmpty() }.orEmpty(),
-            cast = cast,
+            rating = imdbRating?.asText()?.toDoubleOrNull(),
+            genres = (stringList(genres) + stringList(genre)).distinct().takeIf { it.isNotEmpty() }.orEmpty(),
+            cast = stringList(cast),
             trailerYoutubeIds = trailers.mapNotNull { it.source } +
                 trailerStreams.mapNotNull { it.ytId },
             videos = videos

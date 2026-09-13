@@ -216,8 +216,8 @@ fun matchesQuery(entry: CatalogEntry, query: String): Boolean {
     val tokens = q.split(Regex("\\s+")).filter { it.isNotEmpty() }
     val hits = tokens.count { token ->
         haystack.contains(token) ||
-            entry.genres.any { it.lowercase().contains(token) } ||
-            entry.cast.any { it.lowercase().contains(token) }
+            stringList(entry.genres).any { it.lowercase().contains(token) } ||
+            stringList(entry.cast).any { it.lowercase().contains(token) }
     }
     if (hits >= tokens.size) return true
     val flatTitle = haystack.replace(Regex("[^a-z0-9]"), "")

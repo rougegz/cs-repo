@@ -140,17 +140,30 @@ class StremioUtilsTest {
 
     @Test
     fun `query matcher handles tokens and glued titles`() {
-        val entry = CatalogEntry(
-            name = "The Shawshank Redemption",
-            id = "tt0111161",
-            description = "A banker is sentenced.",
-            genres = listOf("Drama"),
-            cast = listOf("Tim Robbins")
-        )
+        val entry = extractMetaEntry(
+            """{"id":"tt0111161","name":"The Shawshank Redemption","description":"A banker is sentenced.",
+               "genres":"Drama, Crime","cast":["Tim Robbins"],"imdbRating":9.3,"year":1994}""",
+            "tt0111161"
+        )!!
         assertTrue(matchesQuery(entry, "shawshank"))
         assertTrue(matchesQuery(entry, "tim robbins drama"))
         assertFalse(matchesQuery(entry, "zzzqqqnomatch"))
         assertFalse(matchesQuery(entry, ""))
+    }
+
+    @Test
+    fun `bare meta objects and string fields parse`() {
+        val bare = extractMetaEntry(
+            """{"id":"tmdb:537061","type":"movie","name":"Steven Universe: The Movie",
+               "genres":"Animation, Family","cast":"Zach Callison, Estelle","imdbRating":8.196,"year":2019}""",
+            "tmdb:537061"
+        )!!
+        assertEquals("Steven Universe: The Movie", bare.name)
+        assertEquals(listOf("Animation", "Family"), stringList(bare.genres))
+        assertEquals(listOf("Zach Callison", "Estelle"), stringList(bare.cast))
+        assertEquals(8.196, bare.imdbRating?.asText()?.toDoubleOrNull() ?: 0.0, 0.001)
+        assertNull(extractMetaEntry("""{"error":{"message":"nope"}}""", "x"))
+        assertNull(extractMetaEntry("not json", "x"))
     }
 
     @Test
