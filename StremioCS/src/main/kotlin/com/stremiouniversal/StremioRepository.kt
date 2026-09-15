@@ -12,6 +12,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 class StremioRepository(prefs: SharedPreferences?) {
     private val prefs: SharedPreferences? = prefs
+    companion object {
+        private const val MANIFEST_TTL_MS = 24L * 60 * 60 * 1000
+        private const val TRACKER_TTL_MS = 6L * 60 * 60 * 1000
+        private data class TimedManifest(val at: Long, val manifest: StremioManifest)
+        private val manifests = java.util.concurrent.ConcurrentHashMap<String, TimedManifest>()
+        @Volatile private var cachedTrackers: List<String>? = null
+        @Volatile private var cachedTrackersAt: Long = 0
+    }
     private fun safeEncode(value: String): String? = runCatching {
         java.net.URLEncoder.encode(value, "UTF-8")
     }.getOrNull()
@@ -114,6 +122,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             ?.putString(StremioConstants.KEY_ADDONS, arr.toString())
             ?.putInt(StremioConstants.KEY_SCHEMA_V, StremioConstants.SCHEMA_V)
             ?.apply()
+        manifests.keys.retainAll(configs.map { it.manifestUrl }.toSet())
     }
     fun addAddon(manifestUrl: String): Boolean {
         val normalized = normalizeAddonUrl(manifestUrl) ?: return false
@@ -168,9 +177,13 @@ class StremioRepository(prefs: SharedPreferences?) {
         }.mapNotNull { resultOr(null) { it.await() } }
     }
     private suspend fun manifestOf(url: String): StremioManifest? {
+        manifests[url]?.let { (at, manifest) ->
+            if (System.currentTimeMillis() - at < MANIFEST_TTL_MS) return manifest
+        }
         return resultOr(null) {
             app.get(url, timeout = 20).parsedSafe<StremioManifest>()
-        }
+                ?.also { manifests[url] = TimedManifest(System.currentTimeMillis(), it) }
+        } ?: manifests[url]?.manifest
     }
     private fun describe(config: AddonConfig, order: Int, manifest: StremioManifest): ConfiguredAddon? {
         val base = manifestBase(config.manifestUrl)
@@ -234,7 +247,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encId = safeEncode(catalog.id) ?: return emptyList()
         val url = safeGetUrl("${addon.base}/catalog/$encType/${encId}$paging.json", addon.querySuffix) ?: return emptyList()
         return resultOr(emptyList()) {
-            app.get(url, timeout = 20).parsedSafe<CatalogResponse>()?.metas.orEmpty()
+            app.get(url, timeout = 30).parsedSafe<CatalogResponse>()?.metas.orEmpty()
         }.filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
     }
     private suspend fun catalogRow(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): CatalogRow? {
@@ -437,7 +450,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             val encoded = safeEncode(ref.id) ?: return@amap emptyList<StremioStream>()
             val url = safeGetUrl("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix) ?: return@amap emptyList<StremioStream>()
             resultOr(emptyList()) {
-                app.get(url, timeout = 30).parsedSafe<StreamsResponse>()?.streams.orEmpty()
+                app.get(url, timeout = 60).parsedSafe<StreamsResponse>()?.streams.orEmpty()
             }
         }.flatten().map { stream ->
             if (remoteTrackers.isEmpty() || stream.infoHash.isNullOrBlank()) stream
@@ -448,13 +461,21 @@ class StremioRepository(prefs: SharedPreferences?) {
     }
 
     suspend fun fetchRemoteTrackers(): List<String> {
-        return resultOr(emptyList()) {
+        val now = System.currentTimeMillis()
+        cachedTrackers?.let { if (now - cachedTrackersAt < TRACKER_TTL_MS) return it }
+        val remote = resultOr(emptyList()) {
             app.get(StremioConstants.TRACKER_LIST_URL, timeout = 15).text.take(64 * 1024)
                 .lineSequence().map { it.trim() }
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .filter { it.matches(Regex("^(udp|http|https|ws)://[^\\s]+$")) }
                 .take(20).toList()
         }
+        if (remote.isNotEmpty()) {
+            cachedTrackers = remote
+            cachedTrackersAt = now
+            return remote
+        }
+        return cachedTrackers.orEmpty()
     }
 
     suspend fun globalSubtitles(imdbId: String?, season: Int?, episode: Int?): List<RemoteSubtitle> {
