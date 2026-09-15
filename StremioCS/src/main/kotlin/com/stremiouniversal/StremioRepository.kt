@@ -1,5 +1,6 @@
 package com.stremiouniversal
 import android.content.SharedPreferences
+import android.util.Log
 import com.fasterxml.jackson.databind.JsonNode
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.amap
@@ -17,8 +18,7 @@ class StremioRepository(prefs: SharedPreferences?) {
     }
     fun loadConfiguredAddons(): List<AddonConfig> {
         val raw = prefs?.getString(StremioConstants.KEY_ADDONS, null)
-            ?: return emptyList()
-        if (raw.isBlank()) return emptyList()
+        if (raw.isNullOrBlank()) return migrateLegacyAddons()
         return runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i ->
@@ -31,7 +31,64 @@ class StremioRepository(prefs: SharedPreferences?) {
                     enabled = obj.optBoolean("enabled", true)
                 )
             }
-        }.getOrDefault(emptyList())
+        }.getOrElse {
+            Log.e("StremioCS", "loadConfiguredAddons: corrupt JSON, trying legacy keys", it)
+            migrateLegacyAddons()
+        }
+    }
+
+    private fun migrateLegacyAddons(): List<AddonConfig> {
+        val p = prefs ?: return emptyList()
+        val found = mutableListOf<AddonConfig>()
+        try {
+            var index = 0
+            while (true) {
+                val key = if (index == 0) StremioConstants.LEGACY_ADDON_PREFIX
+                else StremioConstants.LEGACY_ADDON_PREFIX + (index + 1)
+                if (!p.contains(key)) break
+                val value = p.getString(key, "").orEmpty().trim()
+                if (value.isNotEmpty()) {
+
+                    normalizeAddonUrl(value)?.let { found.add(AddonConfig("", it)) }
+                        ?: normalizeAddonUrl(value.fixSourceUrl())?.let { found.add(AddonConfig("", it)) }
+                }
+                index++
+                if (index > 500) break
+            }
+            listOf(StremioConstants.LEGACY_LINKS_X, StremioConstants.LEGACY_LINKS_STREAMPLAY).forEach { blobKey ->
+                val blob = p.getString(blobKey, null) ?: return@forEach
+                runCatching {
+                    val arr = JSONArray(blob)
+                    (0 until arr.length()).mapNotNull { i ->
+                        val obj = arr.optJSONObject(i) ?: return@mapNotNull null
+                        val rawUrl = obj.optString("link")
+                            .ifEmpty { obj.optString("url") }
+                            .ifEmpty { obj.optString("manifestUrl") }
+                        val name = obj.optString("name").trim()
+                        normalizeAddonUrl(rawUrl)?.let { AddonConfig(name, it) }
+                    }
+                }.getOrDefault(emptyList()).forEach { found.add(it) }
+            }
+        } catch (e: Exception) {
+            Log.e("StremioCS", "migrateLegacyAddons failed", e)
+            return emptyList()
+        }
+        val deduped = found.distinctBy { addonBaseKey(it.manifestUrl) }
+        if (deduped.isEmpty()) return emptyList()
+        saveAddons(deduped)
+        try {
+            p.edit().apply {
+                val keys = p.all.keys.filter {
+                    it.startsWith(StremioConstants.LEGACY_ADDON_PREFIX) ||
+                        it == StremioConstants.LEGACY_LINKS_X ||
+                        it == StremioConstants.LEGACY_LINKS_STREAMPLAY
+                }
+                keys.forEach { remove(it) }
+            }.apply()
+        } catch (e: Exception) {
+            Log.e("StremioCS", "migrateLegacyAddons: clear legacy keys failed", e)
+        }
+        return deduped
     }
     fun loadEnabledAddons(): List<AddonConfig> =
         loadConfiguredAddons().filter { it.enabled }
@@ -132,7 +189,12 @@ class StremioRepository(prefs: SharedPreferences?) {
         if (enabled.isEmpty()) return@supervisorScope emptyList()
         enabled.mapIndexed { order, config ->
             async {
-                val manifest = manifestOf(config.manifestUrl) ?: return@async null
+                val manifest = manifestOf(config.manifestUrl)
+                if (manifest == null) {
+
+                    Log.e("StremioCS", "configuredAddons: manifest null ${addonDisplayHost(config.manifestUrl)}")
+                    return@async null
+                }
                 describe(config, order, manifest)
             }
         }.mapNotNull { resultOr(null) { it.await() } }
@@ -277,8 +339,15 @@ class StremioRepository(prefs: SharedPreferences?) {
         if (addons.isEmpty()) return null
         val origin = addons.firstOrNull { it.base == ref.base }
         if (origin != null) {
-            fetchMeta(origin, ref.type, ref.id)?.toDetails()?.let { return it }
+            val entry = fetchMeta(origin, ref.type, ref.id)
+            if (entry != null) {
+
+                imdbIdFromLinks(entry)?.let { return fetchMetaByImdb(addons, ref.type, it) ?: entry.toDetails() }
+                return entry.toDetails()
+            }
         }
+
+        elfhostedMeta(ref.type, ref.id)?.toDetails()?.let { return it }
         if (ref.id.matches(Regex("^tt\\d+$"))) {
             cinemetaMeta(ref.type, ref.id)?.toDetails()?.let { return it }
         }
@@ -286,6 +355,33 @@ class StremioRepository(prefs: SharedPreferences?) {
             addons.filter { it.hasMeta && it.base != ref.base }.map { addon ->
                 async { fetchMeta(addon, ref.type, ref.id)?.toDetails() }
             }.mapNotNull { resultOr(null) { it.await() } }.firstOrNull()
+        }
+    }
+    private fun imdbIdFromLinks(entry: CatalogEntry): String? {
+
+        entry.links.firstOrNull { it.category == "imdb" }?.let { link ->
+            val candidate = (link.url?.substringAfterLast("/") ?: link.id ?: "")
+                .trim().substringBefore("?").substringBefore("#")
+            if (candidate.matches(Regex("^tt\\d+$"))) return candidate
+            val idCandidate = link.id?.trim().orEmpty()
+            if (idCandidate.matches(Regex("^tt\\d+$"))) return idCandidate
+        }
+        return null
+    }
+    private suspend fun fetchMetaByImdb(addons: List<ConfiguredAddon>, type: String, imdbId: String): MetaDetails? {
+        val origin = addons.firstOrNull() ?: return null
+        fetchMeta(origin, type, imdbId)?.toDetails()?.let { return it }
+        elfhostedMeta(type, imdbId)?.toDetails()?.let { return it }
+        return cinemetaMeta(type, imdbId)?.toDetails()
+    }
+    private suspend fun elfhostedMeta(type: String, id: String): CatalogEntry? {
+        val kind = if (type == "movie") "movie" else "series"
+        val encoded = try { java.net.URLEncoder.encode(id, "UTF-8") } catch (_: Exception) { return null }
+        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
+            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
+        return resultOr(null) {
+            app.get("${StremioConstants.ELFHOSTED_BASE}/meta/$kind/$encoded.json", timeout = timeoutS)
+                .parsedSafe<CatalogResponse>()?.meta
         }
     }
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
@@ -298,6 +394,7 @@ class StremioRepository(prefs: SharedPreferences?) {
     }
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
+        if (!id.matches(Regex("^tt\\d+$"))) return null
         val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
             ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         return resultOr(null) {
@@ -305,16 +402,71 @@ class StremioRepository(prefs: SharedPreferences?) {
                 .parsedSafe<CatalogResponse>()?.meta
         }
     }
+
+    suspend fun resolveStreamId(type: String, id: String): String {
+        val clean = id.trim()
+        if (clean.matches(Regex("^tt\\d+$"))) return clean
+        com.lagradost.cloudstream3.imdbUrlToIdNullable(clean)?.let { return it }
+        if (clean.startsWith("tmdb:")) {
+            tmdbToImdb(clean.removePrefix("tmdb:"), type)?.let { return it }
+            return clean
+        }
+        if (clean.startsWith("kitsu:")) {
+            kitsuToImdb(clean.removePrefix("kitsu:"))?.let { return it }
+            return clean
+        }
+        return clean
+    }
+    private suspend fun tmdbToImdb(tmdbId: String, type: String?): String? {
+
+        val mediaType = if (type == "series") "tv" else "movie"
+        val clean = tmdbId.trim().removePrefix("tmdb:").substringBefore("?").substringBefore("/")
+        if (clean.isEmpty() || clean.any { !it.isDigit() }) return null
+        return resultOr(null) {
+            app.get(
+                "https://api.themoviedb.org/3/$mediaType/$clean/external_ids",
+                params = mapOf("api_key" to StremioConstants.TMDB_DEMO_KEY)
+            ).parsedSafe<TmdbExternalIds>()?.imdb_id?.takeIf { it.matches(Regex("^tt\\d+$")) }
+        }
+    }
+    private suspend fun kitsuToImdb(kitsuId: String): String? {
+
+        val clean = kitsuId.trim().removePrefix("kitsu:").substringBefore("?").substringBefore("/")
+        if (clean.isEmpty() || clean.length > 16 || clean.any { !it.isDigit() }) return null
+        return resultOr(null) {
+            app.get(
+                "https://api.ani.zip/mappings",
+                params = mapOf("kitsu_id" to clean)
+            ).parsedSafe<AniZipResponse>()?.mappings?.imdb_id?.takeIf { it.matches(Regex("^tt\\d+$")) }
+        }
+    }
     suspend fun streamsFor(ref: LinkRef): StreamsResult = supervisorScope {
-        val normalized = normalizeContentId(ref.id)
+
+        val streamId = resolveStreamId(ref.type, ref.id)
+        val streamRef = if (streamId == ref.id) ref else ref.copy(id = streamId)
+        val normalized = normalizeContentId(streamRef.id)
         val targets = configuredAddons().filter { addon ->
             addon.hasStream && (addon.idPrefixes.isEmpty() || addon.idPrefixes.any { prefix ->
-                prefix.isNotEmpty() && (ref.id.startsWith(prefix) || normalized.startsWith(prefix))
+                prefix.isNotEmpty() && (streamRef.id.startsWith(prefix) || normalized.startsWith(prefix))
             })
         }
         if (targets.isEmpty()) return@supervisorScope StreamsResult(emptyList(), emptyList(), emptyList())
+
+        val gate = kotlinx.coroutines.sync.Semaphore(10)
+        val remoteTrackers = fetchRemoteTrackers()
         val perAddon = targets.map { addon ->
-            async { addon to addonStreams(addon, ref) }
+            async {
+                gate.acquire()
+                try {
+                    addon to addonStreams(addon, streamRef, remoteTrackers)
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Log.e("StremioCS", "streamsFor: ${addonDisplayHost(addon.base)}", e)
+                    null
+                } finally {
+                    gate.release()
+                }
+            }
         }.mapNotNull { resultOr(null) { it.await() } }
         val links = sortAndDedupe(
             perAddon.flatMap { (addon, streams) ->
@@ -329,10 +481,11 @@ class StremioRepository(prefs: SharedPreferences?) {
             inlineSubtitles = if (subsEnabled) raw.flatMap { it.subtitles }
                 .mapNotNull { toRemoteSubtitle(it) }
                 .distinctBy { it.url } else emptyList(),
-            youtubeIds = raw.mapNotNull { it.ytId }.distinct()
+            youtubeIds = raw.mapNotNull { it.ytId?.let(::youtubeIdOf) }.distinct().take(100),
+            externalUrls = raw.mapNotNull { it.externalUrl?.trim()?.takeIf { u -> u.startsWith("http://") || u.startsWith("https://") } }.distinct().take(10)
         )
     }
-    private suspend fun addonStreams(addon: ConfiguredAddon, ref: LinkRef): List<StremioStream> {
+    private suspend fun addonStreams(addon: ConfiguredAddon, ref: LinkRef, remoteTrackers: List<String>): List<StremioStream> {
         val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
             ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtLeast(30L)
         return streamTypesFor(ref.type).amap { kind ->
@@ -341,17 +494,59 @@ class StremioRepository(prefs: SharedPreferences?) {
             resultOr(emptyList()) {
                 app.get(url, timeout = timeoutS).parsedSafe<StreamsResponse>()?.streams.orEmpty()
             }
-        }.flatten()
+        }.flatten().map { stream ->
+            if (remoteTrackers.isEmpty() || stream.infoHash.isNullOrBlank()) stream
+            else stream.copy(
+                sources = (stream.sources + remoteTrackers.map { "tracker:$it" }).distinct()
+            )
+        }
+    }
+
+    @Volatile private var cachedTrackers: List<String>? = null
+    @Volatile private var cachedTrackersAt: Long = 0
+    suspend fun fetchRemoteTrackers(): List<String> {
+        val now = System.currentTimeMillis()
+        cachedTrackers?.let { if (now - cachedTrackersAt < 6 * 60 * 60 * 1000L) return it }
+        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
+            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtMost(15L)
+        val remote = resultOr(emptyList()) {
+            app.get(StremioConstants.TRACKER_LIST_URL, timeout = timeoutS).text
+                .lineSequence().map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .filter { it.matches(Regex("^(udp|http|https|ws)://[^\\s]+$")) }
+                .take(20).toList()
+        }
+        if (remote.isNotEmpty()) {
+            cachedTrackers = remote
+            cachedTrackersAt = now
+            return remote
+        }
+        return cachedTrackers.orEmpty()
+    }
+
+    suspend fun globalSubtitles(imdbId: String?, season: Int?, episode: Int?): List<RemoteSubtitle> {
+        val subsEnabled = prefs?.getBoolean(StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED)
+            ?: StremioConstants.DEFAULT_SUBS_ENABLED
+        if (!subsEnabled || imdbId.isNullOrBlank()) return emptyList()
+        if (!imdbId.matches(Regex("^tt\\d+$"))) return emptyList()
+        val slug = if (season == null || episode == null) "movie/$imdbId" else "series/$imdbId:$season:$episode"
+        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
+            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtMost(30L)
+        return resultOr(emptyList()) {
+            app.get("${StremioConstants.OPENSUBS_API}/subtitles/$slug.json", timeout = timeoutS)
+                .parsedSafe<SubsResponse>()?.subtitles.orEmpty()
+        }.mapNotNull(::toRemoteSubtitle).distinctBy { it.url }
     }
     suspend fun subtitlesFor(ref: LinkRef): List<RemoteSubtitle> = supervisorScope {
         val subsEnabled = prefs?.getBoolean(StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED)
             ?: StremioConstants.DEFAULT_SUBS_ENABLED
         if (!subsEnabled) return@supervisorScope emptyList()
+        val subId = resolveStreamId(ref.type, ref.id)
         val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
             ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtMost(30L)
         configuredAddons().filter { it.hasSubtitles }.map { addon ->
             async {
-                val encoded = java.net.URLEncoder.encode(ref.id, "UTF-8")
+                val encoded = java.net.URLEncoder.encode(subId, "UTF-8")
                 val url = withQuery("${addon.base}/subtitles/${ref.type}/$encoded.json", addon.querySuffix)
                 resultOr(emptyList()) {
                     app.get(url, timeout = timeoutS).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
@@ -362,7 +557,8 @@ class StremioRepository(prefs: SharedPreferences?) {
     }
     private fun toRemoteSubtitle(sub: StremioSubtitle): RemoteSubtitle? {
         val url = sub.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return null
-        return RemoteSubtitle(url, sub.lang?.takeIf { it.isNotBlank() } ?: "en")
+
+        return RemoteSubtitle(url, subtitleLangOf(sub) ?: "en")
     }
     private fun CatalogEntry.toRef(addon: ConfiguredAddon, fallbackType: String): MetaRef? {
         if (id.isEmpty() || name.isEmpty()) return null
@@ -393,7 +589,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             genres = (stringList(genres) + stringList(genre)).distinct().takeIf { it.isNotEmpty() }.orEmpty(),
             cast = stringList(cast),
             trailerYoutubeIds = trailers.mapNotNull { it.source?.let(::youtubeIdOf) } +
-                trailerStreams.mapNotNull { it.ytId },
+                trailerStreams.mapNotNull { it.ytId?.let(::youtubeIdOf) },
             videos = videos
         )
     }

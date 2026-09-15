@@ -28,6 +28,19 @@ fun manifestBase(manifestUrl: String): String {
 fun manifestQuery(manifestUrl: String): String =
     if (manifestUrl.contains("?")) "?" + manifestUrl.substringAfter("?") else ""
 fun withQuery(url: String, suffix: String): String = url + suffix
+
+fun String.fixSourceUrl(): String {
+    return this.replace("/manifest.json", "").replace("stremio://", "https://")
+}
+fun fixSourceName(name: String?, title: String?, description: String?): String {
+    val pName = name?.replace("\n", " ")
+    val pTitle = title?.replace("\n", " ")
+    return when {
+        !pName.isNullOrEmpty() && !pTitle.isNullOrEmpty() -> "$pName\n$pTitle"
+        !pName.isNullOrEmpty() && !description.isNullOrEmpty() -> "$pName\n$description"
+        else -> pTitle ?: description ?: pName ?: ""
+    }
+}
 fun normalizeAddonUrl(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
     var line = raw.trim()
@@ -121,7 +134,7 @@ private fun seedersOf(label: String): Int {
     return Regex("(?:^|\\s)(\\d{2,})\\s*(?:seeders?|peers?)\\b", RegexOption.IGNORE_CASE)
         .find(label)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 }
-fun buildMagnet(infoHash: String?, name: String?, sources: List<String>): String? {
+fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, fileIdx: Int? = null): String? {
     val hash = infoHash.orEmpty().replace(Regex("[^a-fA-F0-9]"), "").lowercase()
     if (hash.length != 40) return null
     return buildString {
@@ -129,6 +142,7 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>): String
         if (!name.isNullOrBlank()) {
             append("&dn=").append(java.net.URLEncoder.encode(name.trim().take(120), "UTF-8"))
         }
+        if (fileIdx != null && fileIdx >= 0) append("&so=").append(fileIdx)
         val trackers = FALLBACK_TRACKERS +
             sources.mapNotNull {
                 when {
@@ -142,19 +156,23 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>): String
         }
     }
 }
-private val SAFE_FORWARD_HEADERS = setOf(
-    "user-agent", "referer", "origin", "accept", "accept-language",
-    "accept-encoding", "range", "content-type"
-)
 fun mergeStreamHeaders(stream: StremioStream): Map<String, String> {
-    val merged = mutableMapOf<String, String>()
-    fun putSafe(k: String, v: String) {
-        if (k.lowercase() in SAFE_FORWARD_HEADERS) merged[k] = v
-    }
-    stream.headers?.forEach { (k, v) -> putSafe(k, v) }
-    stream.behaviorHints?.headers?.forEach { (k, v) -> putSafe(k, v) }
-    stream.behaviorHints?.proxyHeaders?.request?.forEach { (k, v) -> putSafe(k, v) }
-    return merged
+
+    val proxy = stream.behaviorHints?.proxyHeaders?.request
+    if (!proxy.isNullOrEmpty()) return sanitizeForwardedHeaders(proxy)
+    val hinted = stream.behaviorHints?.headers
+    if (!hinted.isNullOrEmpty()) return sanitizeForwardedHeaders(hinted)
+    return stream.headers?.let { sanitizeForwardedHeaders(it) } ?: emptyMap()
+}
+
+private val BLOCKED_FORWARD_HEADERS = setOf(
+    "host", "content-length", "transfer-encoding", "connection",
+    "keep-alive", "upgrade", "proxy-authenticate", "proxy-authorization",
+    "te", "trailer"
+)
+private fun sanitizeForwardedHeaders(headers: Map<String, String>): Map<String, String> {
+    if (headers.isEmpty()) return emptyMap()
+    return HashMap(headers).filterKeys { it.lowercase() !in BLOCKED_FORWARD_HEADERS }
 }
 fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
     val cut = url.indexOf('|')
@@ -172,7 +190,10 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
     val direct = stream.url?.trim().orEmpty()
     val hash = stream.infoHash?.trim().orEmpty()
     val body = stream.description?.trim().orEmpty().ifEmpty { stream.title?.trim().orEmpty() }
-    val text = listOfNotNull(stream.name?.trim(), body).filter { it.isNotEmpty() }.joinToString(" ")
+    val header = stream.name?.trim().orEmpty()
+
+    val text = fixSourceName(header.ifEmpty { null }, body.ifEmpty { null }, null)
+        .replace("\n", " ").ifEmpty { listOfNotNull(header.ifEmpty { null }, body.ifEmpty { null }).joinToString(" ") }
     val low = text.lowercase()
     var kodiHeaders: Map<String, String> = emptyMap()
     val url = when {
@@ -187,12 +208,12 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
         hash.isNotEmpty() -> buildMagnet(
             hash,
             stream.name ?: stream.behaviorHints?.filename,
-            stream.sources
+            stream.sources,
+            stream.fileIdx
         ) ?: return null
         else -> return null
     }
     val (resolution, rank) = resolutionOf(low)
-    val header = stream.name?.trim().orEmpty()
     val title = when {
         body.isNotEmpty() && header.isNotEmpty() && header != body && header != addonName -> "$header • $body"
         body.isNotEmpty() -> body
@@ -239,4 +260,20 @@ fun matchesQuery(entry: CatalogEntry, query: String): Boolean {
     val flatTitle = haystack.replace(Regex("[^a-z0-9]"), "")
     val flatQuery = q.replace(Regex("[^a-z0-9]"), "")
     return flatTitle.isNotEmpty() && flatQuery.isNotEmpty() && flatTitle.contains(flatQuery)
+}
+
+fun subtitleLangOf(sub: StremioSubtitle): String? {
+    val raw = sub.lang?.trim().orEmpty().ifEmpty { sub.langCode?.trim().orEmpty() }
+    return raw.takeIf { it.isNotEmpty() }
+}
+
+fun inferStreamTypeName(streamUrl: String): String {
+    if (streamUrl.startsWith("magnet:", ignoreCase = true)) return "MAGNET"
+    val path = streamUrl.substringBefore("?").substringBefore("#")
+    return when {
+        path.endsWith(".torrent", ignoreCase = true) -> "TORRENT"
+        path.endsWith(".mpd", ignoreCase = true) -> "DASH"
+        path.endsWith(".m3u8", ignoreCase = true) || "/hls/" in path.lowercase() -> "M3U8"
+        else -> "INFER"
+    }
 }

@@ -68,7 +68,8 @@ data class StreamLink(
 data class StreamsResult(
     val links: List<StreamLink>,
     val inlineSubtitles: List<RemoteSubtitle>,
-    val youtubeIds: List<String> = emptyList()
+    val youtubeIds: List<String> = emptyList(),
+    val externalUrls: List<String> = emptyList()
 )
 
 data class RemoteSubtitle(
@@ -108,7 +109,7 @@ data class StremioCatalog(
     val extraSupported: List<String>? = null
 ) {
     init {
-        if (type != null) types.add(type)
+        if (type != null && type !in types) types.add(type)
     }
 }
 
@@ -137,9 +138,17 @@ data class CatalogEntry(
     val genre: JsonNode? = null,
     val genres: JsonNode? = null,
     val cast: JsonNode? = null,
+    @JsonProperty("links") val links: List<StremioLink> = emptyList(),
     @JsonProperty("trailers") val trailers: List<StremioTrailer> = emptyList(),
     @JsonProperty("trailerStreams") val trailerStreams: List<TrailerStream> = emptyList(),
     @JsonProperty("year") val year: JsonNode? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class StremioLink(
+    val category: String? = null,
+    val id: String? = null,
+    val url: String? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -177,6 +186,7 @@ data class StremioStream(
     val url: String? = null,
     val description: String? = null,
     val ytId: String? = null,
+    val externalUrl: String? = null,
     val behaviorHints: BehaviorHints? = null,
     val infoHash: String? = null,
     val fileIdx: Int? = null,
@@ -200,10 +210,26 @@ data class ProxyHeaders(
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class StremioSubtitle(
     val url: String? = null,
-    val lang: String? = null
+    val lang: String? = null,
+    @JsonProperty("lang_code") val langCode: String? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class SubsResponse(
     val subtitles: List<StremioSubtitle> = emptyList()
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class TmdbExternalIds(
+    @JsonProperty("imdb_id") val imdb_id: String? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class AniZipResponse(
+    val mappings: AniZipMappings? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class AniZipMappings(
+    @JsonProperty("imdb_id") val imdb_id: String? = null
 )

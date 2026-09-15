@@ -19,6 +19,7 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newSubtitleFile
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.SubtitleHelper
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -40,7 +41,8 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
                     row.items.mapNotNull { it.toSearchResponse() }
                 )
             }.filter { it.list.isNotEmpty() },
-            hasNext = rows.isNotEmpty()
+
+            hasNext = true
         )
     }
     override suspend fun quickSearch(query: String): List<SearchResponse>? =
@@ -99,8 +101,16 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         val ref = parseLinkRef(data) ?: return false
         val result = resultOr(null) { repository.streamsFor(ref) } ?: return false
         result.links.forEach { link ->
+
+            val linkType = when (inferStreamTypeName(link.url)) {
+                "MAGNET" -> ExtractorLinkType.MAGNET
+                "TORRENT" -> ExtractorLinkType.TORRENT
+                "DASH" -> ExtractorLinkType.DASH
+                "M3U8" -> ExtractorLinkType.M3U8
+                else -> INFER_TYPE
+            }
             callback(
-                newExtractorLink(link.source, link.title, link.url, INFER_TYPE) {
+                newExtractorLink(link.source, link.title, link.url, linkType) {
                     quality = qualityValue(link.qualityTag)
                     headers = link.headers
                 }
@@ -109,8 +119,18 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
         result.youtubeIds.forEach { ytId ->
             resultOr(Unit) { loadExtractor("https://www.youtube.com/watch?v=$ytId", subtitleCallback, callback) }
         }
+
+        result.externalUrls.forEach { ext ->
+            resultOr(Unit) { loadExtractor(ext, subtitleCallback, callback) }
+        }
         val remote = resultOr(emptyList()) { repository.subtitlesFor(ref) }
-        (remote + result.inlineSubtitles).distinctBy { it.url }.forEach { sub ->
+
+        val imdbForSubs = resultOr(null) { repository.resolveStreamId(ref.type, ref.id) }
+            ?.takeIf { it.matches(Regex("^tt\\d+$")) }
+        val global = if (imdbForSubs != null && remote.isEmpty() && result.inlineSubtitles.isEmpty()) {
+            resultOr(emptyList()) { repository.globalSubtitles(imdbForSubs, null, null) }
+        } else emptyList()
+        (remote + result.inlineSubtitles + global).distinctBy { it.url }.forEach { sub ->
             subtitleCallback(
                 newSubtitleFile(
                     SubtitleHelper.fromTagToEnglishLanguageName(sub.lang) ?: sub.lang,
@@ -118,7 +138,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
                 )
             )
         }
-        return result.links.isNotEmpty() || result.youtubeIds.isNotEmpty()
+        return result.links.isNotEmpty() || result.youtubeIds.isNotEmpty() || result.externalUrls.isNotEmpty()
     }
     private fun MetaRef.toSearchResponse(): SearchResponse? {
         if (id.isEmpty() || name.isEmpty()) return null
