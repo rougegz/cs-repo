@@ -14,7 +14,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.stremiouniversal.AddonUrlOpener
 import com.stremiouniversal.StremioConstants
+import com.stremiouniversal.normalizeAddonUrl
 
 object AddonBrowserDialog {
 
@@ -47,13 +49,28 @@ object AddonBrowserDialog {
                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             }
             webViewClient = object : WebViewClient() {
+                private fun handleOutside(target: String?): Boolean {
+                    val scheme = runCatching { Uri.parse(target.orEmpty()).scheme?.lowercase() }.getOrNull()
+                    if (scheme == "stremio") {
+                        val normalized = normalizeAddonUrl(target)
+                        if (normalized != null) {
+                            AddonUrlOpener.copyToClipboard(ctx, "StremioCS link", normalized)
+                            Toast.makeText(ctx, "Manifest link copied — paste it in Add", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(ctx, "Couldn't read that install link", Toast.LENGTH_SHORT).show()
+                        }
+                        return true
+                    }
+                    Toast.makeText(ctx, "Opening outside link…", Toast.LENGTH_SHORT).show()
+                    AddonUrlOpener.openExternalUrl(ctx, target ?: StremioConstants.BROWSE_ADDONS_URL)
+                    return true
+                }
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     return if (isAllowedBrowseUrl(request.url?.toString())) {
                         errorView.visibility = android.view.View.GONE
                         false
                     } else {
-                        Toast.makeText(ctx, "Blocked — browser stays in stremio-addons.net", Toast.LENGTH_SHORT).show()
-                        true
+                        handleOutside(request.url?.toString())
                     }
                 }
 
@@ -63,8 +80,7 @@ object AddonBrowserDialog {
                         errorView.visibility = android.view.View.GONE
                         false
                     } else {
-                        Toast.makeText(ctx, "Blocked — browser stays in stremio-addons.net", Toast.LENGTH_SHORT).show()
-                        true
+                        handleOutside(url)
                     }
                 }
 
