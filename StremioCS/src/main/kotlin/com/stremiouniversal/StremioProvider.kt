@@ -1,5 +1,4 @@
 package com.stremiouniversal
-
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -24,17 +23,15 @@ import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.SubtitleHelper
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-
 class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     override var mainUrl = ""
     override var name = "StremioCS"
     override val hasMainPage = true
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Others)
-
     override val mainPage = mainPageOf("Stremio" to "stremio")
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        if (repository.addonCount() == 0) return newHomePageResponse(emptyList(), hasNext = false)
         val rows = resultOr(emptyList()) { repository.catalogRows(page) }
         return newHomePageResponse(
             rows.map { row ->
@@ -46,18 +43,16 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             hasNext = rows.isNotEmpty()
         )
     }
-
     override suspend fun quickSearch(query: String): List<SearchResponse>? =
         resultOr(null) { search(query) }
-
-    override suspend fun search(query: String): List<SearchResponse> =
-        resultOr(emptyList()) { repository.searchAll(query) }
+    override suspend fun search(query: String): List<SearchResponse> {
+        if (repository.addonCount() == 0) return emptyList()
+        return resultOr(emptyList()) { repository.searchAll(query) }
             .mapNotNull { it.toSearchResponse() }
-
+    }
     override suspend fun load(url: String): LoadResponse? {
         val ref = parseLinkRef(url) ?: return null
-        val details = resultOr(null) { repository.metaDetails(ref) }
-            ?: MetaDetails(ref.id, ref.type, ref.id, null, null, "", null, null, emptyList(), emptyList(), emptyList(), emptyList())
+        val details = resultOr(null) { repository.metaDetails(ref) } ?: return null
         val payload = LinkRef(ref.base, details.type.ifEmpty { ref.type }, details.id).toJsonString()
         val hasEpisodes = details.videos.isNotEmpty()
         val screenType = if (hasEpisodes) TvType.TvSeries else contentTypeOf(details.type)
@@ -95,7 +90,6 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             details.trailerYoutubeIds.firstOrNull()?.let { addTrailer("https://www.youtube.com/watch?v=$it") }
         }
     }
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -124,19 +118,18 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
                 )
             )
         }
-        return true
+        return result.links.isNotEmpty() || result.youtubeIds.isNotEmpty()
     }
-
     private fun MetaRef.toSearchResponse(): SearchResponse? {
         if (id.isEmpty() || name.isEmpty()) return null
         return newMovieSearchResponse(name, LinkRef(base, type, id).toJsonString(), contentTypeOf(type)) {
             posterUrl = poster
         }
     }
-
     private fun contentTypeOf(type: String): TvType = when (type.lowercase()) {
         "movie", "short" -> TvType.Movie
         "series", "anime" -> TvType.TvSeries
+        "tv", "channel", "live", "livestream", "iptv" -> TvType.Others
         else -> TvType.Movie
     }
 }

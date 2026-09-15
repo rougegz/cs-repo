@@ -1,8 +1,6 @@
 package com.stremiouniversal
-
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import kotlinx.coroutines.CancellationException
-
 suspend fun <T> resultOr(default: T, block: suspend () -> T): T = try {
     block()
 } catch (e: CancellationException) {
@@ -10,7 +8,6 @@ suspend fun <T> resultOr(default: T, block: suspend () -> T): T = try {
 } catch (_: Exception) {
     default
 }
-
 const val MAX_STREAMS = 180
 const val MAX_SUBTITLES = 12
 const val MAX_SEARCH_RESULTS = 60
@@ -18,9 +15,7 @@ const val MAX_ITEMS_PER_ROW = 40
 const val MAX_CATALOGS_PER_ADDON = 30
 const val FILTER_CATALOGS_PER_ADDON = 6
 const val NATIVE_SEARCH_MIN = 20
-
 private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv")
-
 private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.demonii.com:1337/announce",
@@ -31,19 +26,43 @@ private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.moeking.me:6969/announce",
     "http://tracker.openbittorrent.com:80/announce"
 )
-
 fun manifestBase(manifestUrl: String): String {
     var base = manifestUrl.trim().replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
     base = base.substringBefore("?")
     base = base.replace(Regex("/(manifest\\.json.*|streams?|catalogs?)/?$"), "").trimEnd('/')
     return base
 }
-
 fun manifestQuery(manifestUrl: String): String =
     if (manifestUrl.contains("?")) "?" + manifestUrl.substringAfter("?") else ""
-
 fun withQuery(url: String, suffix: String): String = url + suffix
-
+fun normalizeAddonUrl(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    var line = raw.trim()
+    if (line.isEmpty()) return null
+    if ("|" in line) {
+        val parts = line.split("|").map { it.trim() }.filter { it.isNotEmpty() }
+        line = parts.firstOrNull { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("stremio://", ignoreCase = true) }
+            ?: parts.last()
+    }
+    line = line.replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://").trim()
+    if (!line.startsWith("http://") && !line.startsWith("https://")) return null
+    if (line.contains(Regex("\\s"))) return null
+    val query = if (line.contains("?")) "?" + line.substringAfter("?") else ""
+    var noQuery = line.substringBefore("?").trimEnd('/')
+    val lower = noQuery.lowercase()
+    val isManifest = lower.endsWith("manifest.json") || "/manifest.json" in lower ||
+        "/configure" in lower
+    if (!isManifest) {
+        noQuery = "$noQuery/manifest.json"
+    }
+    if (noQuery.length > 2048) return null
+    return noQuery + query
+}
+fun addonDisplayHost(manifestUrl: String): String =
+    manifestUrl.substringAfter("://").substringBefore("/").substringBefore("?")
+        .takeIf { it.isNotEmpty() } ?: manifestUrl.take(32)
+fun addonBaseKey(manifestUrl: String): String =
+    manifestBase(manifestUrl).lowercase().trimEnd('/')
 fun streamTypesFor(type: String): List<String> {
     val t = type.lowercase()
     return when (t) {
@@ -53,7 +72,6 @@ fun streamTypesFor(type: String): List<String> {
         else -> listOf(t, "movie", "series").distinct()
     }
 }
-
 fun normalizeContentId(id: String): String {
     val clean = id.trim()
     return when {
@@ -62,7 +80,6 @@ fun normalizeContentId(id: String): String {
         else -> clean
     }
 }
-
 fun yearOf(node: com.fasterxml.jackson.databind.JsonNode?): Int? {
     if (node == null || node.isNull) return null
     if (node.isNumber) return node.asInt().takeIf { it in 1900..2100 }
@@ -70,14 +87,12 @@ fun yearOf(node: com.fasterxml.jackson.databind.JsonNode?): Int? {
     text.toIntOrNull()?.takeIf { it in 1900..2100 }?.let { return it }
     return Regex("(19|20)\\d{2}").find(text)?.value?.toIntOrNull()
 }
-
 fun youtubeIdOf(source: String): String? {
     val trimmed = source.trim()
     if (trimmed.matches(Regex("^[A-Za-z0-9_-]{11}$"))) return trimmed
     Regex("[?&]v=([A-Za-z0-9_-]{11})").find(trimmed)?.groupValues?.get(1)?.let { return it }
     return Regex("youtu\\.be/([A-Za-z0-9_-]{11})").find(trimmed)?.groupValues?.get(1)
 }
-
 fun fixPosterUrl(poster: String?): String? {
     val p = poster?.trim().orEmpty()
     if (p.isEmpty()) return null
@@ -86,10 +101,8 @@ fun fixPosterUrl(poster: String?): String? {
     if (p.startsWith("http://") || p.startsWith("https://")) return p
     return null
 }
-
 fun stripHtml(raw: String?): String =
     raw.orEmpty().replace(Regex("<[^>]*>"), "").replace(Regex("\\s+"), " ").trim()
-
 fun resolutionOf(label: String): Pair<String?, Int> {
     val l = label.lowercase()
     return when {
@@ -104,20 +117,17 @@ fun resolutionOf(label: String): Pair<String?, Int> {
         else -> null to 1
     }
 }
-
 fun qualityValue(tag: String?): Int {
     val t = tag.orEmpty()
     val query = if (t.equals("4K", ignoreCase = true)) "2160p"
     else Regex("(\\d{3,4}[pP])").find(t)?.groupValues?.get(1)
     return getQualityFromName(query)
 }
-
 private fun seedersOf(label: String): Int {
     Regex("[👥🌱👤]\\s*(\\d+)").find(label)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
     return Regex("(?:^|\\s)(\\d{2,})\\s*(?:seeders?|peers?)\\b", RegexOption.IGNORE_CASE)
         .find(label)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 }
-
 fun buildMagnet(infoHash: String?, name: String?, sources: List<String>): String? {
     val hash = infoHash.orEmpty().replace(Regex("[^a-fA-F0-9]"), "").lowercase()
     if (hash.length != 40) return null
@@ -139,15 +149,20 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>): String
         }
     }
 }
-
+private val SAFE_FORWARD_HEADERS = setOf(
+    "user-agent", "referer", "origin", "accept", "accept-language",
+    "accept-encoding", "range", "content-type"
+)
 fun mergeStreamHeaders(stream: StremioStream): Map<String, String> {
     val merged = mutableMapOf<String, String>()
-    stream.headers?.forEach { (k, v) -> merged[k] = v }
-    stream.behaviorHints?.headers?.forEach { (k, v) -> merged[k] = v }
-    stream.behaviorHints?.proxyHeaders?.request?.forEach { (k, v) -> merged[k] = v }
+    fun putSafe(k: String, v: String) {
+        if (k.lowercase() in SAFE_FORWARD_HEADERS) merged[k] = v
+    }
+    stream.headers?.forEach { (k, v) -> putSafe(k, v) }
+    stream.behaviorHints?.headers?.forEach { (k, v) -> putSafe(k, v) }
+    stream.behaviorHints?.proxyHeaders?.request?.forEach { (k, v) -> putSafe(k, v) }
     return merged
 }
-
 fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
     val cut = url.indexOf('|')
     if (cut == -1) return url to emptyMap()
@@ -160,17 +175,6 @@ fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
     if (headers.isEmpty()) return url to emptyMap()
     return url.substring(0, cut) to headers
 }
-
-fun parseAddonUrl(raw: String): String? {
-    val line = raw.trim()
-    if (line.isEmpty()) return null
-    val url = line.substringAfter("|", line).trim()
-    return url.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-}
-
-fun toAddonConfigs(urls: List<String>): List<AddonConfig> =
-    urls.mapNotNull(::parseAddonUrl).distinct().map { AddonConfig("", it) }
-
 fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): StreamLink? {
     val direct = stream.url?.trim().orEmpty()
     val hash = stream.infoHash?.trim().orEmpty()
@@ -213,7 +217,6 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
         fileIdx = stream.fileIdx
     )
 }
-
 fun sortAndDedupe(links: List<StreamLink>): List<StreamLink> {
     val seen = mutableSetOf<String>()
     val unique = links.filter { link ->
@@ -229,7 +232,6 @@ fun sortAndDedupe(links: List<StreamLink>): List<StreamLink> {
             .thenBy(StreamLink::addonOrder)
     ).take(MAX_STREAMS)
 }
-
 fun matchesQuery(entry: CatalogEntry, query: String): Boolean {
     val q = query.lowercase().trim()
     if (q.isEmpty()) return false
