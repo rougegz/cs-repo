@@ -1,7 +1,7 @@
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
-version = 3
+version = 4
 cloudstream {
     description = """
         StremioCS — every Stremio addon in one provider: all catalogues, all streams, search and subtitles, in your addon order. No built-in addons — add your own via Settings → Browse Addons (https://stremio-addons.net).
