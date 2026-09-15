@@ -1,22 +1,18 @@
 name: Build
 
-#Concurrency scoped to the specific branch/ref, not global
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
 on:
-  #Allows you to manually trigger the workflow from the Actions tab
   workflow_dispatch:
-
   push:
     branches:
       - master
       - main
     paths-ignore:
-      - '*.md'
+      - "*.md"
 
-#Grant permission to push changes back to the repo
 permissions:
   contents: write
 
@@ -46,53 +42,17 @@ jobs:
           java-version: 17
           cache: "gradle"
 
-      - name: Setup Android SDK (preinstalled on ubuntu-latest)
-        # FIX: android-actions/setup-android@v4.0.1 fails in ~6s (default
-        # cmdline-tools 14742923/v20.0 404 + preinstalled-SDK version mismatch
-        # + deprecated default `packages: tools platform-tools`). ubuntu-latest
-        # already ships the SDK at $ANDROID_SDK_ROOT, so use it directly and
-        # install only the API-36 packages this repo needs (compileSdk 36).
+      - name: Setup Android SDK
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_SDK_ROOT/cmdline-tools" || true
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-          sdkmanager --list_installed || true
-
-      - name: Access Secrets & Create Properties
-        env:
-          SIMKL_API: ${{ secrets.SIMKL_API }}
-          TMDB_KEY: ${{ secrets.TMDB_KEY }}
-          CC_COOKIE: ${{ secrets.CC_COOKIE }}
-          CASTLE_KEY: ${{ secrets.CASTLE_KEY }}
-          MOVIEBLAST_TOKEN: ${{ secrets.MOVIEBLAST_TOKEN }}
-          MOVIEBLAST_API: ${{ secrets.MOVIEBLAST_API }}
-          MOVIEBLAST_KEY: ${{ secrets.MOVIEBLAST_KEY }}
-          NETMIRROR_TOKEN: ${{ secrets.NETMIRROR_TOKEN }}
-
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          # Create file if it doesn't exist
-          touch local.properties
-          echo "SIMKL_API=$SIMKL_API" >> local.properties
-          echo "TMDB_KEY=$TMDB_KEY" >> local.properties
-          echo "CC_COOKIE=$CC_COOKIE" >> local.properties
-          echo "CASTLE_KEY=$CASTLE_KEY" >> local.properties
-          echo "MOVIEBLAST_TOKEN=$MOVIEBLAST_TOKEN" >> local.properties
-          echo "MOVIEBLAST_API=$MOVIEBLAST_API" >> local.properties
-          echo "MOVIEBLAST_KEY=$MOVIEBLAST_KEY" >> local.properties
-          echo "NETMIRROR_TOKEN=$NETMIRROR_TOKEN" >> local.properties
 
       - name: Build Plugins
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
           ./gradlew make makePluginsJson
-
-          # Copy files (fail safely if directory doesn't exist)
-          # NOTE: `**` needs globstar; use find so this works in plain bash.
           find . -path "*/build/*.cs3" -exec cp {} "$GITHUB_WORKSPACE/builds/" \; || echo "No .cs3 files found"
           cp build/plugins.json "$GITHUB_WORKSPACE/builds/" || echo "No plugins.json found"
 
@@ -102,8 +62,6 @@ jobs:
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           git add .
-
-          # Only commit/push if there are changes
           if [[ -n $(git status -s) ]]; then
             git commit --amend -m "Build $GITHUB_SHA" || git commit -m "Build $GITHUB_SHA"
             git push --force
