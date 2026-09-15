@@ -108,7 +108,18 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         val browse = MaterialButton(ctx).apply {
             text = "Browse Addons"
             isAllCaps = false
-            setOnClickListener { AddonUrlOpener.openBrowseAddons(ctx) }
+            setOnClickListener {
+                // In-app mini-browser locked to stremio-addons.net; external fallback if WebView missing.
+                try {
+                    AddonBrowserDialog.show(ctx, onPickUrl = { picked ->
+                        searchInput.setText("")
+                        tryAdd(ctx, picked, null)
+                        rebuildRows(ctx)
+                    })
+                } catch (_: Exception) {
+                    AddonUrlOpener.openBrowseAddons(ctx)
+                }
+            }
         }
         val paste = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = "Paste"
@@ -162,6 +173,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                     config = config,
                     position = index,
                     total = configs.size,
+                    movesEnabled = filter.isEmpty(),
                     onToggle = { checked ->
                         repository.setAddonEnabled(index, checked)
                     },
@@ -170,8 +182,12 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                         rebuildRows(ctx)
                     },
                     onMove = { delta ->
-                        repository.moveAddon(index, index + delta)
-                        rebuildRows(ctx)
+                        if (filter.isNotEmpty()) {
+                            Toast.makeText(ctx, "Clear search to reorder", Toast.LENGTH_SHORT).show()
+                        } else {
+                            repository.moveAddon(index, index + delta)
+                            rebuildRows(ctx)
+                        }
                     }
                 )
             )
@@ -183,6 +199,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         config: AddonConfig,
         position: Int,
         total: Int,
+        movesEnabled: Boolean,
         onToggle: (Boolean) -> Unit,
         onDelete: () -> Unit,
         onMove: (Int) -> Unit
@@ -215,7 +232,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             setImageResource(android.R.drawable.arrow_up_float)
             background = null
             contentDescription = "Move up"
-            isEnabled = position > 0
+            isEnabled = movesEnabled && position > 0
             alpha = if (isEnabled) 1f else 0.3f
             setOnClickListener { onMove(-1) }
         }
@@ -223,7 +240,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             setImageResource(android.R.drawable.arrow_down_float)
             background = null
             contentDescription = "Move down"
-            isEnabled = position < total - 1
+            isEnabled = movesEnabled && position < total - 1
             alpha = if (isEnabled) 1f else 0.3f
             setOnClickListener { onMove(1) }
         }

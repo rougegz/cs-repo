@@ -34,15 +34,15 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         if (repository.addonCount() == 0) return newHomePageResponse(emptyList(), hasNext = false)
         val rows = resultOr(emptyList()) { repository.catalogRows(page) }
-        return newHomePageResponse(
-            rows.map { row ->
+        val lists = rows.map { row ->
                 HomePageList(
                     row.title,
                     row.items.mapNotNull { it.toSearchResponse() }
                 )
-            }.filter { it.list.isNotEmpty() },
-
-            hasNext = true
+            }.filter { it.list.isNotEmpty() }
+        return newHomePageResponse(
+            lists,
+            hasNext = rows.isNotEmpty() && lists.isNotEmpty()
         )
     }
     override suspend fun quickSearch(query: String): List<SearchResponse>? =

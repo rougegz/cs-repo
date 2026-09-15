@@ -22,15 +22,23 @@ private val FALLBACK_TRACKERS = listOf(
 fun manifestBase(manifestUrl: String): String {
     var base = manifestUrl.trim().replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
     base = base.substringBefore("?")
-    base = base.replace(Regex("/(manifest\\.json.*|streams?|catalogs?)/?$"), "").trimEnd('/')
+    base = base.replace(Regex("/manifest\\.json/?$", RegexOption.IGNORE_CASE), "").trimEnd('/')
     return base
 }
 fun manifestQuery(manifestUrl: String): String =
     if (manifestUrl.contains("?")) "?" + manifestUrl.substringAfter("?") else ""
 fun withQuery(url: String, suffix: String): String = url + suffix
+fun String.isValidQuerySuffix(): Boolean {
+    if (isEmpty()) return true
+    if (!startsWith("?")) return false
+    if (length > 1024) return false
+    if (contains(Regex("\\s"))) return false
+    return true
+}
 
 fun String.fixSourceUrl(): String {
-    return this.replace("/manifest.json", "").replace("stremio://", "https://")
+    // Compat shim (StremioAddon/insta pattern): delegate to the canonical normalizer.
+    return normalizeAddonUrl(this)?.removeSuffix("/manifest.json") ?: this.replace("/manifest.json", "").replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
 }
 fun fixSourceName(name: String?, title: String?, description: String?): String {
     val pName = name?.replace("\n", " ")
@@ -51,7 +59,8 @@ fun normalizeAddonUrl(raw: String?): String? {
             ?: parts.last()
     }
     line = line.replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://").trim()
-    if (!line.startsWith("http://") && !line.startsWith("https://")) return null
+    val scheme = line.substringBefore(":").lowercase()
+    if (scheme != "http" && scheme != "https") return null
     if (line.contains(Regex("\\s"))) return null
     val query = if (line.contains("?")) "?" + line.substringAfter("?") else ""
     var noQuery = line.substringBefore("?").trimEnd('/')
@@ -69,6 +78,10 @@ fun addonDisplayHost(manifestUrl: String): String =
         .takeIf { it.isNotEmpty() } ?: manifestUrl.take(32)
 fun addonBaseKey(manifestUrl: String): String =
     manifestBase(manifestUrl).lowercase().trimEnd('/')
+/** Syntactic gate: true when [normalizeAddonUrl] accepts the input. */
+fun isValidManifestUrl(raw: String?): Boolean = normalizeAddonUrl(raw) != null
+/** Back-compat alias kept for callers/tests expecting the old name. */
+fun parseAddonUrl(raw: String?): String? = normalizeAddonUrl(raw)
 fun streamTypesFor(type: String): List<String> {
     val t = type.lowercase()
     return when (t) {
@@ -168,11 +181,14 @@ fun mergeStreamHeaders(stream: StremioStream): Map<String, String> {
 private val BLOCKED_FORWARD_HEADERS = setOf(
     "host", "content-length", "transfer-encoding", "connection",
     "keep-alive", "upgrade", "proxy-authenticate", "proxy-authorization",
-    "te", "trailer"
+    "te", "trailer", "authorization", "cookie", "set-cookie", "x-api-key"
 )
-private fun sanitizeForwardedHeaders(headers: Map<String, String>): Map<String, String> {
+internal fun sanitizeForwardedHeaders(headers: Map<String, String>): Map<String, String> {
     if (headers.isEmpty()) return emptyMap()
-    return HashMap(headers).filterKeys { it.lowercase() !in BLOCKED_FORWARD_HEADERS }
+    return HashMap(headers).filterKeys { key ->
+        val low = key.lowercase()
+        low !in BLOCKED_FORWARD_HEADERS && !low.startsWith("proxy-") && !low.startsWith("sec-") && !low.contains("\r") && !low.contains("\n")
+    }.filterValues { v -> !v.contains("\r") && !v.contains("\n") }
 }
 fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
     val cut = url.indexOf('|')
@@ -224,7 +240,7 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
         source = addonName,
         title = title,
         qualityTag = resolution,
-        headers = mergeStreamHeaders(stream) + kodiHeaders,
+        headers = mergeStreamHeaders(stream) + sanitizeForwardedHeaders(kodiHeaders),
         resolutionRank = rank,
         seeders = seedersOf(low),
         addonOrder = addonOrder,

@@ -7,13 +7,18 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.browser.customtabs.CustomTabsIntent
 object AddonUrlOpener {
     fun openBrowseAddons(context: Context) {
         openUrl(context, StremioConstants.BROWSE_ADDONS_URL)
     }
+    /** Public entry for the in-app mini-browser "Open externally" fallback. */
+    fun openExternalUrl(context: Context, url: String) {
+        openUrl(context, url)
+    }
     private fun openUrl(context: Context, url: String) {
         val uri = runCatching { Uri.parse(url) }.getOrNull()
-        if (uri == null || (uri.scheme != "http" && uri.scheme != "https")) {
+        if (uri == null || (uri.scheme?.lowercase() != "http" && uri.scheme?.lowercase() != "https")) {
             Toast.makeText(context, "Invalid link: $url", Toast.LENGTH_SHORT).show()
             return
         }
@@ -30,16 +35,11 @@ object AddonUrlOpener {
         }
     }
     private fun tryCustomTab(context: Context, uri: Uri): Boolean = try {
-        val builderClass = Class.forName("androidx.browser.customtabs.CustomTabsIntent\$Builder")
-        val builder = builderClass.getDeclaredConstructor().newInstance()
-        val build = builderClass.getMethod("build").invoke(builder)
-        val intentClass = Class.forName("androidx.browser.customtabs.CustomTabsIntent")
-        val intentField = intentClass.getField("intent").get(build) as Intent
-        intentField.data = uri
-        if (context !is Activity) intentField.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intentField)
+        val customTabsIntent = CustomTabsIntent.Builder().build()
+        if (context !is Activity) customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        customTabsIntent.launchUrl(context, uri)
         true
-    } catch (_: ClassNotFoundException) {
+    } catch (_: ActivityNotFoundException) {
         false
     } catch (_: Exception) {
         false

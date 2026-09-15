@@ -35,7 +35,15 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/rougegz/cs-repo")
+        // GITHUB_REPOSITORY in Actions is a bare slug ("owner/repo"), not a URL.
+        // Normalizing here fixes plugins.json download `url` fields pointing at the wrong host (404 on install).
+        val repoSlug = System.getenv("GITHUB_REPOSITORY")?.trim().orEmpty()
+        val repoUrl = when {
+            repoSlug.startsWith("http://") || repoSlug.startsWith("https://") -> repoSlug
+            repoSlug.contains("/") -> "https://github.com/$repoSlug"
+            else -> "https://github.com/rougegz/cs-repo"
+        }
+        setRepo(repoUrl)
         authors = listOf("rougegz")
     }
 
