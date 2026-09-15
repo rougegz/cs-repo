@@ -31,9 +31,9 @@ class StremioRepository(prefs: SharedPreferences?) {
         return full
     }
     private suspend inline fun <reified T> fetchJson(url: String, timeout: Long): T? {
-        repeat(2) { attempt ->
+        repeat(3) { attempt ->
             resultOr(null) { app.get(url, timeout = timeout).parsedSafe<T>() }?.let { return it }
-            if (attempt == 0) kotlinx.coroutines.delay(500)
+            if (attempt < 2) kotlinx.coroutines.delay(500L * (attempt + 1))
         }
         return null
     }
@@ -252,7 +252,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encType = safeEncode(type) ?: return emptyList()
         val encId = safeEncode(catalog.id) ?: return emptyList()
         val url = safeGetUrl("${addon.base}/catalog/$encType/${encId}$paging.json", addon.querySuffix) ?: return emptyList()
-        return (fetchJson<CatalogResponse>(url, 30)?.metas.orEmpty())
+        return (fetchJson<CatalogResponse>(url, 20)?.metas.orEmpty())
             .filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
     }
     private suspend fun catalogRow(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): CatalogRow? {
@@ -353,7 +353,7 @@ class StremioRepository(prefs: SharedPreferences?) {
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
         val encoded = safeEncode(id) ?: return null
         val url = safeGetUrl("${addon.base}/meta/$type/$encoded.json", addon.querySuffix) ?: return null
-        repeat(2) { attempt ->
+        repeat(3) { attempt ->
             val text = resultOr(null) {
                 app.get(url, timeout = 20).text.takeIf { it.length <= 2 * 1024 * 1024 }
             }
@@ -362,7 +362,7 @@ class StremioRepository(prefs: SharedPreferences?) {
                 if (entry.id.isNotEmpty() && entry.id != id) return null
                 return entry
             }
-            if (attempt == 0) kotlinx.coroutines.delay(500)
+            if (attempt < 2) kotlinx.coroutines.delay(500L * (attempt + 1))
         }
         return null
     }
@@ -459,7 +459,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         return streamTypesFor(ref.type).amap { kind ->
             val encoded = safeEncode(ref.id) ?: return@amap emptyList<StremioStream>()
             val url = safeGetUrl("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix) ?: return@amap emptyList<StremioStream>()
-            fetchJson<StreamsResponse>(url, 60)?.streams.orEmpty()
+            fetchJson<StreamsResponse>(url, 30)?.streams.orEmpty()
         }.flatten().map { stream ->
             if (remoteTrackers.isEmpty() || stream.infoHash.isNullOrBlank()) stream
             else stream.copy(
