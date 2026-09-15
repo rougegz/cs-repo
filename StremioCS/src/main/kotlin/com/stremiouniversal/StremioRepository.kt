@@ -160,7 +160,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val catalogs = manifest.catalogs.flatMap { catalog ->
             if (catalog.type != null) listOf(catalog)
             else catalog.types.map { type -> catalog.copy(type = type, types = mutableListOf(type)) }
-        }.filter { it.id.isNotEmpty() && it.type != null }.take(MAX_CATALOGS_PER_ADDON)
+        }.filter { it.id.isNotEmpty() && it.type != null }
         return ConfiguredAddon(
             order = order,
             displayName = manifest.name?.trim()?.takeIf { it.isNotEmpty() }
@@ -225,7 +225,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val type = catalog.type ?: return null
         val metas = catalogMetas(addon, catalog, skip)
         if (metas.isEmpty()) return null
-        val items = metas.mapNotNull { it.toRef(addon, type) }.take(MAX_ITEMS_PER_ROW)
+        val items = metas.mapNotNull { it.toRef(addon, type) }
         if (items.isEmpty()) return null
         return CatalogRow(catalog.name?.takeIf { it.isNotBlank() } ?: catalog.id, items)
     }
@@ -241,16 +241,13 @@ class StremioRepository(prefs: SharedPreferences?) {
                 }.flatMap { resultOr(emptyList()) { it.await() } }
             }
         }.flatMap { resultOr(emptyList()) { it.await() } }
-            .distinctBy { "${it.type}:${it.id}" }
-        if (native.size >= NATIVE_SEARCH_MIN) return@supervisorScope native.take(MAX_SEARCH_RESULTS)
         if (prefs?.getBoolean(StremioConstants.KEY_SEARCH_FALLBACK, StremioConstants.DEFAULT_SEARCH_FALLBACK) == false) {
-            return@supervisorScope native.take(MAX_SEARCH_RESULTS)
+            return@supervisorScope native.distinctBy { "${it.type}:${it.id}" }
         }
         val filtered = addons.map { addon ->
             async {
                 addon.catalogs
                     .filter { !supportsSearch(it) && !isSearchCatalog(it) }
-                    .take(FILTER_CATALOGS_PER_ADDON)
                     .map { catalog ->
                         async {
                             val type = catalog.type ?: return@async emptyList<MetaRef>()
@@ -261,7 +258,7 @@ class StremioRepository(prefs: SharedPreferences?) {
                     }.flatMap { resultOr(emptyList()) { it.await() } }
             }
         }.flatMap { resultOr(emptyList()) { it.await() } }
-        (native + filtered).distinctBy { "${it.type}:${it.id}" }.take(MAX_SEARCH_RESULTS)
+        (native + filtered).distinctBy { "${it.type}:${it.id}" }
     }
     private suspend fun searchCatalog(addon: ConfiguredAddon, catalog: StremioCatalog, query: String): List<MetaRef> {
         val type = catalog.type ?: return emptyList()
@@ -319,13 +316,11 @@ class StremioRepository(prefs: SharedPreferences?) {
         val perAddon = targets.map { addon ->
             async { addon to addonStreams(addon, ref) }
         }.mapNotNull { resultOr(null) { it.await() } }
-        val maxStreams = (prefs?.getInt(StremioConstants.KEY_MAX_STREAMS, StremioConstants.DEFAULT_MAX_STREAMS)
-            ?: StremioConstants.DEFAULT_MAX_STREAMS).coerceIn(10, MAX_STREAMS)
         val links = sortAndDedupe(
             perAddon.flatMap { (addon, streams) ->
                 streams.mapNotNull { toStreamLink(it, addon.displayName, addon.order) }
             }
-        ).take(maxStreams)
+        )
         val raw = perAddon.flatMap { (_, streams) -> streams }
         val subsEnabled = prefs?.getBoolean(StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED)
             ?: StremioConstants.DEFAULT_SUBS_ENABLED
@@ -364,7 +359,6 @@ class StremioRepository(prefs: SharedPreferences?) {
             }
         }.flatMap { resultOr(emptyList()) { it.await() } }
             .distinctBy { it.url }
-            .take(MAX_SUBTITLES)
     }
     private fun toRemoteSubtitle(sub: StremioSubtitle): RemoteSubtitle? {
         val url = sub.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: return null

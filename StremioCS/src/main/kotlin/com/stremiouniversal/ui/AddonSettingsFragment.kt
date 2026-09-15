@@ -307,9 +307,8 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         }
         box.addView(switchPref(ctx, "Subtitles enabled", StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED))
         box.addView(switchPref(ctx, "Search fallback (scan catalogs when native search is thin)", StremioConstants.KEY_SEARCH_FALLBACK, StremioConstants.DEFAULT_SEARCH_FALLBACK))
-        box.addView(hint(ctx, "Timeout ${prefs.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)}s • Max streams ${prefs.getInt(StremioConstants.KEY_MAX_STREAMS, StremioConstants.DEFAULT_MAX_STREAMS)} • Cache ${prefs.getInt(StremioConstants.KEY_CACHE_TTL_H, StremioConstants.DEFAULT_CACHE_TTL_H)}h — tap to adjust."))
+        box.addView(hint(ctx, "Timeout ${prefs.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)}s • Cache ${prefs.getInt(StremioConstants.KEY_CACHE_TTL_H, StremioConstants.DEFAULT_CACHE_TTL_H)}h — tap to adjust."))
         box.addView(numberRow(ctx, "Timeout", StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S, 5, 120, "s"))
-        box.addView(numberRow(ctx, "Max streams", StremioConstants.KEY_MAX_STREAMS, StremioConstants.DEFAULT_MAX_STREAMS, 10, 180, ""))
         box.addView(numberRow(ctx, "Manifest cache", StremioConstants.KEY_CACHE_TTL_H, StremioConstants.DEFAULT_CACHE_TTL_H, 0, 168, "h"))
         return box
     }
@@ -338,7 +337,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             val next = when {
                 cur >= max -> min
                 key == StremioConstants.KEY_TIMEOUT_S -> (cur + 5).coerceAtMost(max)
-                key == StremioConstants.KEY_MAX_STREAMS -> (cur + 10).coerceAtMost(max)
                 else -> (cur + 6).coerceAtMost(max)
             }
             prefs.edit().putInt(key, next).apply()

@@ -8,13 +8,6 @@ suspend fun <T> resultOr(default: T, block: suspend () -> T): T = try {
 } catch (_: Exception) {
     default
 }
-const val MAX_STREAMS = 180
-const val MAX_SUBTITLES = 12
-const val MAX_SEARCH_RESULTS = 60
-const val MAX_ITEMS_PER_ROW = 40
-const val MAX_CATALOGS_PER_ADDON = 30
-const val FILTER_CATALOGS_PER_ADDON = 6
-const val NATIVE_SEARCH_MIN = 20
 private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv")
 private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.opentrackr.org:1337/announce",
@@ -230,7 +223,7 @@ fun sortAndDedupe(links: List<StreamLink>): List<StreamLink> {
         compareByDescending(StreamLink::resolutionRank)
             .thenByDescending(StreamLink::seeders)
             .thenBy(StreamLink::addonOrder)
-    ).take(MAX_STREAMS)
+    )
 }
 fun matchesQuery(entry: CatalogEntry, query: String): Boolean {
     val q = query.lowercase().trim()
