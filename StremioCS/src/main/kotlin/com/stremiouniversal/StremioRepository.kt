@@ -30,6 +30,13 @@ class StremioRepository(prefs: SharedPreferences?) {
         if (!suffix.isValidQuerySuffix()) return null
         return full
     }
+    private suspend inline fun <reified T> fetchJson(url: String, timeout: Long): T? {
+        repeat(2) { attempt ->
+            resultOr(null) { app.get(url, timeout = timeout).parsedSafe<T>() }?.let { return it }
+            if (attempt == 0) kotlinx.coroutines.delay(500)
+        }
+        return null
+    }
     fun loadConfiguredAddons(): List<AddonConfig> {
         val raw = prefs?.getString(StremioConstants.KEY_ADDONS, null)
         if (raw.isNullOrBlank()) return migrateLegacyAddons()
@@ -180,10 +187,9 @@ class StremioRepository(prefs: SharedPreferences?) {
         manifests[url]?.let { (at, manifest) ->
             if (System.currentTimeMillis() - at < MANIFEST_TTL_MS) return manifest
         }
-        return resultOr(null) {
-            app.get(url, timeout = 20).parsedSafe<StremioManifest>()
-                ?.also { manifests[url] = TimedManifest(System.currentTimeMillis(), it) }
-        } ?: manifests[url]?.manifest
+        return fetchJson<StremioManifest>(url, 20)
+            ?.also { manifests[url] = TimedManifest(System.currentTimeMillis(), it) }
+            ?: manifests[url]?.manifest
     }
     private fun describe(config: AddonConfig, order: Int, manifest: StremioManifest): ConfiguredAddon? {
         val base = manifestBase(config.manifestUrl)
@@ -246,9 +252,8 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encType = safeEncode(type) ?: return emptyList()
         val encId = safeEncode(catalog.id) ?: return emptyList()
         val url = safeGetUrl("${addon.base}/catalog/$encType/${encId}$paging.json", addon.querySuffix) ?: return emptyList()
-        return resultOr(emptyList()) {
-            app.get(url, timeout = 30).parsedSafe<CatalogResponse>()?.metas.orEmpty()
-        }.filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
+        return (fetchJson<CatalogResponse>(url, 30)?.metas.orEmpty())
+            .filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
     }
     private suspend fun catalogRow(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): CatalogRow? {
         val type = catalog.type ?: return null
@@ -348,13 +353,18 @@ class StremioRepository(prefs: SharedPreferences?) {
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
         val encoded = safeEncode(id) ?: return null
         val url = safeGetUrl("${addon.base}/meta/$type/$encoded.json", addon.querySuffix) ?: return null
-        val body = resultOr(null) {
-            val text = app.get(url, timeout = 20).text
-            if (text.length > 2 * 1024 * 1024) null else text
-        } ?: return null
-        val entry = extractMetaEntry(body, id) ?: return null
-        if (entry.id.isNotEmpty() && entry.id != id) return null
-        return entry
+        repeat(2) { attempt ->
+            val text = resultOr(null) {
+                app.get(url, timeout = 20).text.takeIf { it.length <= 2 * 1024 * 1024 }
+            }
+            if (text != null) {
+                val entry = extractMetaEntry(text, id) ?: return null
+                if (entry.id.isNotEmpty() && entry.id != id) return null
+                return entry
+            }
+            if (attempt == 0) kotlinx.coroutines.delay(500)
+        }
+        return null
     }
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
@@ -449,9 +459,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         return streamTypesFor(ref.type).amap { kind ->
             val encoded = safeEncode(ref.id) ?: return@amap emptyList<StremioStream>()
             val url = safeGetUrl("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix) ?: return@amap emptyList<StremioStream>()
-            resultOr(emptyList()) {
-                app.get(url, timeout = 60).parsedSafe<StreamsResponse>()?.streams.orEmpty()
-            }
+            fetchJson<StreamsResponse>(url, 60)?.streams.orEmpty()
         }.flatten().map { stream ->
             if (remoteTrackers.isEmpty() || stream.infoHash.isNullOrBlank()) stream
             else stream.copy(
