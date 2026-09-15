@@ -143,43 +143,6 @@ class StremioRepository(prefs: SharedPreferences?) {
         current.add(to, item)
         saveAddons(current)
     }
-    fun clearAll() = saveAddons(emptyList())
-    fun exportJson(): String {
-        val arr = JSONArray()
-        loadConfiguredAddons().forEach {
-            arr.put(JSONObject().put("name", it.name).put("url", it.manifestUrl).put("enabled", it.enabled))
-        }
-        return arr.toString(2)
-    }
-    fun importJson(raw: String): Int {
-        if (raw.length > 256 * 1024) return -1
-        val parsed = runCatching {
-            val input = raw.trim()
-            val arr = if (input.startsWith("[")) JSONArray(input)
-            else JSONArray().apply { put(JSONObject(input)) }
-            if (arr.length() > 500) return -1
-            (0 until arr.length()).mapNotNull { i ->
-                val obj = arr.optJSONObject(i) ?: return@mapNotNull null
-                val url = obj.optString("url").ifEmpty { obj.optString("manifestUrl") }
-                normalizeAddonUrl(url)?.let {
-                    AddonConfig(obj.optString("name").trim(), it, obj.optBoolean("enabled", true))
-                }
-            }
-        }.getOrNull() ?: return -1
-        if (parsed.isEmpty()) return 0
-        val current = loadConfiguredAddons()
-        val bases = current.map { addonBaseKey(it.manifestUrl) }.toMutableSet()
-        val merged = current.toMutableList()
-        var added = 0
-        parsed.forEach {
-            if (bases.add(addonBaseKey(it.manifestUrl))) {
-                merged.add(it)
-                added++
-            }
-        }
-        if (added > 0) saveAddons(merged)
-        return added
-    }
     suspend fun previewAddon(manifestUrl: String): AddonPreview? {
         val normalized = normalizeAddonUrl(manifestUrl) ?: return null
         val manifest = manifestOf(normalized) ?: return null

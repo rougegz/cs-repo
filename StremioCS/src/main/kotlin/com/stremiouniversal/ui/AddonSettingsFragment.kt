@@ -32,8 +32,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
     private lateinit var repository: StremioRepository
     private lateinit var rowsBox: LinearLayout
     private lateinit var emptyView: TextView
-    private lateinit var searchInput: EditText
-    private var filter: String = ""
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,10 +58,8 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         root.addView(header(ctx, "StremioCS settings", 20f))
         root.addView(hint(ctx, "Addons are fully yours — no defaults. Browse, paste a manifest URL, reorder, toggle."))
         root.addView(header(ctx, "Addons", 16f))
-        root.addView(searchRow(ctx))
-        root.addView(browseRow(ctx))
         emptyView = TextView(ctx).apply {
-            text = "No addons yet.\nTap Browse Addons to discover one, then paste its manifest URL below."
+            text = "No addons yet.\nTap Browse Addons below to find one, then paste its link in Add new."
             textSize = 13f
             setPadding(0, 12, 0, 12)
         }
@@ -74,32 +70,10 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         val status = TextView(ctx).apply { textSize = 12f }
         root.addView(addRow(ctx, status))
         root.addView(status)
-        root.addView(header(ctx, "Data", 16f))
-        root.addView(dataRow(ctx))
-        root.addView(hint(ctx, "Browse: ${StremioConstants.BROWSE_ADDONS_URL} • Order sets catalogue & stream priority."))
+        root.addView(hint(ctx, "Order sets catalogue & stream priority."))
+        root.addView(browseRow(ctx))
         rebuildRows(ctx)
         return ScrollView(ctx).apply { addView(root) }
-    }
-    private fun searchRow(ctx: Context): LinearLayout {
-        searchInput = EditText(ctx).apply {
-            hint = "Search addons (name, host, url)"
-            inputType = InputType.TYPE_CLASS_TEXT
-            imeOptions = EditorInfo.IME_ACTION_SEARCH
-            isSingleLine = true
-            addTextChangedListener(object : android.text.TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
-                override fun afterTextChanged(s: android.text.Editable?) {
-                    filter = s?.toString()?.trim()?.lowercase().orEmpty()
-                    rebuildRows(ctx)
-                }
-            })
-        }
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 8, 0, 4)
-            addView(searchInput)
-        }
     }
     private fun browseRow(ctx: Context): LinearLayout {
         val browse = MaterialButton(ctx).apply {
@@ -121,7 +95,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                 if (clip == null) {
                     Toast.makeText(ctx, "Clipboard has no manifest URL", Toast.LENGTH_SHORT).show()
                 } else {
-                    searchInput.setText("")
                     tryAdd(ctx, clip, null)
                 }
             }
@@ -146,26 +119,15 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
     private fun rebuildRows(ctx: Context) {
         rowsBox.removeAllViews()
         val configs = repository.loadConfiguredAddons().toMutableList()
-        val visible = if (filter.isEmpty()) configs.withIndex().toList()
-        else configs.withIndex().filter { (_, c) ->
-            c.name.lowercase().contains(filter) ||
-                c.manifestUrl.lowercase().contains(filter) ||
-                addonDisplayHost(c.manifestUrl).lowercase().contains(filter)
-        }
         emptyView.visibility = if (configs.isEmpty()) View.VISIBLE else View.GONE
         if (configs.isEmpty()) return
-        if (visible.isEmpty()) {
-            rowsBox.addView(hint(ctx, "No matches for \"$filter\"."))
-            return
-        }
-        visible.forEach { (index, config) ->
+        configs.forEachIndexed { index, config ->
             rowsBox.addView(
                 addonRow(
                     ctx = ctx,
                     config = config,
                     position = index,
                     total = configs.size,
-                    movesEnabled = filter.isEmpty(),
                     onToggle = { checked ->
                         repository.setAddonEnabled(index, checked)
                     },
@@ -174,12 +136,8 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                         rebuildRows(ctx)
                     },
                     onMove = { delta ->
-                        if (filter.isNotEmpty()) {
-                            Toast.makeText(ctx, "Clear search to reorder", Toast.LENGTH_SHORT).show()
-                        } else {
-                            repository.moveAddon(index, index + delta)
-                            rebuildRows(ctx)
-                        }
+                        repository.moveAddon(index, index + delta)
+                        rebuildRows(ctx)
                     }
                 )
             )
@@ -191,7 +149,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         config: AddonConfig,
         position: Int,
         total: Int,
-        movesEnabled: Boolean,
         onToggle: (Boolean) -> Unit,
         onDelete: () -> Unit,
         onMove: (Int) -> Unit
@@ -224,7 +181,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             setImageResource(android.R.drawable.arrow_up_float)
             background = null
             contentDescription = "Move up"
-            isEnabled = movesEnabled && position > 0
+            isEnabled = position > 0
             alpha = if (isEnabled) 1f else 0.3f
             setOnClickListener { onMove(-1) }
         }
@@ -232,7 +189,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             setImageResource(android.R.drawable.arrow_down_float)
             background = null
             contentDescription = "Move down"
-            isEnabled = movesEnabled && position < total - 1
+            isEnabled = position < total - 1
             alpha = if (isEnabled) 1f else 0.3f
             setOnClickListener { onMove(1) }
         }
@@ -308,85 +265,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
                 status?.text = "Added, but manifest did not load — check the URL."
             }
         }
-    }
-    private fun dataRow(ctx: Context): LinearLayout {
-        val export = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Export"
-            isAllCaps = false
-            setOnClickListener {
-                val json = repository.exportJson()
-                if (json == "[]") {
-                    Toast.makeText(ctx, "Nothing to export", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                AddonUrlOpener.copyToClipboard(ctx, "StremioCS addons", json)
-                Toast.makeText(ctx, "Exported — note: URLs may contain private ?tokens", Toast.LENGTH_LONG).show()
-            }
-        }
-        val import = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Import"
-            isAllCaps = false
-            setOnClickListener { showImportDialog(ctx) }
-        }
-        val clear = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = "Clear all"
-            isAllCaps = false
-            setOnClickListener {
-                AlertDialog.Builder(ctx)
-                    .setTitle("Remove all addons?")
-                    .setMessage("This clears every addon. You can re-add via Browse Addons.")
-                    .setPositiveButton("Clear") { _, _ ->
-                        repository.clearAll()
-                        rebuildRows(ctx)
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
-        }
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 4, 0, 8)
-            addView(export.apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-            addView(import.apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-            addView(clear.apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f) })
-        }
-    }
-    private fun showImportDialog(ctx: Context) {
-        val input = EditText(ctx).apply {
-            hint = "Paste JSON ([{name,url,enabled}]) or a manifest URL"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 3
-        }
-        AlertDialog.Builder(ctx)
-            .setTitle("Import addons")
-            .setView(input)
-            .setPositiveButton("Import") { _, _ ->
-                val raw = input.text.toString().trim()
-                if (raw.isEmpty()) return@setPositiveButton
-                if (raw.length > 256 * 1024) {
-                    Toast.makeText(ctx, "Import too large — nothing imported", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val trimmed = raw.trimStart()
-                if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-                    val added = repository.importJson(raw)
-                    Toast.makeText(
-                        ctx,
-                        when {
-                            added < 0 -> "Invalid JSON — nothing imported"
-                            added == 0 -> "Nothing new — already listed"
-                            else -> "Imported $added addon(s)"
-                        },
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    rebuildRows(ctx)
-                } else {
-                    tryAdd(ctx, raw, null)
-                    rebuildRows(ctx)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
     private fun header(ctx: Context, text: String, size: Float): TextView =
         TextView(ctx).apply {

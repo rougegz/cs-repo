@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 version = 4
 cloudstream {
     description = """
-        StremioCS — every Stremio addon in one provider: all catalogues, all streams, search and subtitles, in your addon order. No built-in addons — add your own via Settings → Browse Addons (https://stremio-addons.net).
+        Watch anything with your own Stremio addons. Open Settings to add them.
     """.trimIndent()
     authors = listOf("rougegz")
     status = 1

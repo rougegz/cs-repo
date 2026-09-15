@@ -2,7 +2,6 @@ package com.stremiouniversal.ui
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Build
 import android.view.KeyEvent
 import android.webkit.WebResourceError
@@ -12,20 +11,10 @@ import android.webkit.WebViewClient
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import com.stremiouniversal.AddonUrlOpener
 import com.stremiouniversal.StremioConstants
-import com.stremiouniversal.normalizeAddonUrl
 
 object AddonBrowserDialog {
-
-    private fun isAllowedBrowseUrl(url: String?): Boolean = runCatching {
-        val uri = Uri.parse(url.orEmpty()) ?: return false
-        if (uri.scheme?.lowercase() != "https") return false
-        val host = uri.host?.lowercase().orEmpty()
-        host == "stremio-addons.net" || host == "www.stremio-addons.net"
-    }.getOrDefault(false)
 
     fun show(ctx: Context) {
         val density = ctx.resources.displayMetrics.density
@@ -49,41 +38,6 @@ object AddonBrowserDialog {
                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
             }
             webViewClient = object : WebViewClient() {
-                private fun handleOutside(target: String?): Boolean {
-                    val scheme = runCatching { Uri.parse(target.orEmpty()).scheme?.lowercase() }.getOrNull()
-                    if (scheme == "stremio") {
-                        val normalized = normalizeAddonUrl(target)
-                        if (normalized != null) {
-                            AddonUrlOpener.copyToClipboard(ctx, "StremioCS link", normalized)
-                            Toast.makeText(ctx, "Manifest link copied — paste it in Add", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(ctx, "Couldn't read that install link", Toast.LENGTH_SHORT).show()
-                        }
-                        return true
-                    }
-                    Toast.makeText(ctx, "Opening outside link…", Toast.LENGTH_SHORT).show()
-                    AddonUrlOpener.openExternalUrl(ctx, target ?: StremioConstants.BROWSE_ADDONS_URL)
-                    return true
-                }
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    return if (isAllowedBrowseUrl(request.url?.toString())) {
-                        errorView.visibility = android.view.View.GONE
-                        false
-                    } else {
-                        handleOutside(request.url?.toString())
-                    }
-                }
-
-                @Suppress("DEPRECATION")
-                override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                    return if (isAllowedBrowseUrl(url)) {
-                        errorView.visibility = android.view.View.GONE
-                        false
-                    } else {
-                        handleOutside(url)
-                    }
-                }
-
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                     errorView.visibility = android.view.View.GONE
                 }

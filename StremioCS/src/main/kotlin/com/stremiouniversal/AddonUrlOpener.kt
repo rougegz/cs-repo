@@ -1,7 +1,6 @@
 package com.stremiouniversal
 import android.app.Activity
 import android.content.ActivityNotFoundException
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -11,9 +10,6 @@ import androidx.browser.customtabs.CustomTabsIntent
 object AddonUrlOpener {
     fun openBrowseAddons(context: Context) {
         openUrl(context, StremioConstants.BROWSE_ADDONS_URL)
-    }
-    fun openExternalUrl(context: Context, url: String) {
-        openUrl(context, url)
     }
     private fun openUrl(context: Context, url: String) {
         val uri = runCatching { Uri.parse(url) }.getOrNull()
@@ -52,15 +48,5 @@ object AddonUrlOpener {
         normalizeAddonUrl(text)
     } catch (_: Exception) {
         null
-    }
-    fun copyToClipboard(context: Context, label: String, text: String) {
-        try {
-            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                ?: return
-            cm.setPrimaryClip(ClipData.newPlainText(label, text))
-            Toast.makeText(context, "$label copied", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            Toast.makeText(context, "Copy failed", Toast.LENGTH_SHORT).show()
-        }
     }
 }
