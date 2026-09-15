@@ -12,10 +12,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 class StremioRepository(prefs: SharedPreferences?) {
     private val prefs: SharedPreferences? = prefs
-    companion object {
-        private data class TimedManifest(val at: Long, val manifest: StremioManifest)
-        private val manifests = java.util.concurrent.ConcurrentHashMap<String, TimedManifest>()
-    }
     private fun safeEncode(value: String): String? = runCatching {
         java.net.URLEncoder.encode(value, "UTF-8")
     }.getOrNull()
@@ -118,7 +114,6 @@ class StremioRepository(prefs: SharedPreferences?) {
             ?.putString(StremioConstants.KEY_ADDONS, arr.toString())
             ?.putInt(StremioConstants.KEY_SCHEMA_V, StremioConstants.SCHEMA_V)
             ?.apply()
-        manifests.keys.retainAll(configs.map { it.manifestUrl }.toSet())
     }
     fun addAddon(manifestUrl: String): Boolean {
         val normalized = normalizeAddonUrl(manifestUrl) ?: return false
@@ -210,21 +205,9 @@ class StremioRepository(prefs: SharedPreferences?) {
         }.mapNotNull { resultOr(null) { it.await() } }
     }
     private suspend fun manifestOf(url: String): StremioManifest? {
-        val ttlMs = (prefs?.getInt(
-            StremioConstants.KEY_CACHE_TTL_H,
-            StremioConstants.DEFAULT_CACHE_TTL_H
-        ) ?: StremioConstants.DEFAULT_CACHE_TTL_H).coerceIn(0, 168) * 60L * 60L * 1000L
-        manifests[url]?.let { (at, manifest) ->
-            if (ttlMs <= 0L || System.currentTimeMillis() - at < ttlMs) return manifest
-        }
-        val timeoutS = (prefs?.getInt(
-            StremioConstants.KEY_TIMEOUT_S,
-            StremioConstants.DEFAULT_TIMEOUT_S
-        ) ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         return resultOr(null) {
-            app.get(url, timeout = timeoutS).parsedSafe<StremioManifest>()
-                ?.also { manifests[url] = TimedManifest(System.currentTimeMillis(), it) }
-        } ?: manifests[url]?.manifest
+            app.get(url, timeout = 20).parsedSafe<StremioManifest>()
+        }
     }
     private fun describe(config: AddonConfig, order: Int, manifest: StremioManifest): ConfiguredAddon? {
         val base = manifestBase(config.manifestUrl)
@@ -287,10 +270,8 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encType = safeEncode(type) ?: return emptyList()
         val encId = safeEncode(catalog.id) ?: return emptyList()
         val url = safeGetUrl("${addon.base}/catalog/$encType/${encId}$paging.json", addon.querySuffix) ?: return emptyList()
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         return resultOr(emptyList()) {
-            app.get(url, timeout = timeoutS).parsedSafe<CatalogResponse>()?.metas.orEmpty()
+            app.get(url, timeout = 20).parsedSafe<CatalogResponse>()?.metas.orEmpty()
         }.filter { it.id.isNotEmpty() && it.name.isNotEmpty() }
     }
     private suspend fun catalogRow(addon: ConfiguredAddon, catalog: StremioCatalog, skip: Int): CatalogRow? {
@@ -313,9 +294,6 @@ class StremioRepository(prefs: SharedPreferences?) {
                 }.flatMap { resultOr(emptyList()) { it.await() } }
             }
         }.flatMap { resultOr(emptyList()) { it.await() } }
-        if (prefs?.getBoolean(StremioConstants.KEY_SEARCH_FALLBACK, StremioConstants.DEFAULT_SEARCH_FALLBACK) == false) {
-            return@supervisorScope native.distinctBy { "${it.type}:${it.id}" }
-        }
         val filtered = addons.map { addon ->
             async {
                 addon.catalogs
@@ -338,10 +316,8 @@ class StremioRepository(prefs: SharedPreferences?) {
         val encType = safeEncode(type) ?: return emptyList()
         val encId = safeEncode(catalog.id) ?: return emptyList()
         val url = safeGetUrl("${addon.base}/catalog/$encType/${encId}/search=$encoded.json", addon.querySuffix) ?: return emptyList()
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         return resultOr(emptyList()) {
-            app.get(url, timeout = timeoutS).parsedSafe<CatalogResponse>()?.metas.orEmpty()
+            app.get(url, timeout = 20).parsedSafe<CatalogResponse>()?.metas.orEmpty()
         }.mapNotNull { it.toRef(addon, type) }
     }
     suspend fun metaDetails(ref: LinkRef): MetaDetails? {
@@ -350,7 +326,6 @@ class StremioRepository(prefs: SharedPreferences?) {
         val origin = addons.firstOrNull { it.base == ref.base }
         if (origin != null) {
             val entry = fetchMeta(origin, ref.type, ref.id)
-            // Guard against wrong-id meta (stuck details screen): only accept matching id.
             if (entry != null && (entry.id == ref.id || entry.id.isEmpty())) {
                 imdbIdFromLinks(entry)?.let { return fetchMetaByImdb(addons, ref.type, it) ?: entry.toDetails() }
                 return entry.toDetails()
@@ -389,20 +364,16 @@ class StremioRepository(prefs: SharedPreferences?) {
     private suspend fun elfhostedMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
         val encoded = safeEncode(id) ?: return null
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         return resultOr(null) {
-            app.get("${StremioConstants.ELFHOSTED_BASE}/meta/$kind/$encoded.json", timeout = timeoutS)
+            app.get("${StremioConstants.ELFHOSTED_BASE}/meta/$kind/$encoded.json", timeout = 20)
                 .parsedSafe<CatalogResponse>()?.meta
         }?.takeIf { it.id.isEmpty() || it.id == id }
     }
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
         val encoded = safeEncode(id) ?: return null
         val url = safeGetUrl("${addon.base}/meta/$type/$encoded.json", addon.querySuffix) ?: return null
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         val body = resultOr(null) {
-            val text = app.get(url, timeout = timeoutS).text
+            val text = app.get(url, timeout = 20).text
             if (text.length > 2 * 1024 * 1024) null else text
         } ?: return null
         val entry = extractMetaEntry(body, id) ?: return null
@@ -412,10 +383,8 @@ class StremioRepository(prefs: SharedPreferences?) {
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
         if (!id.matches(Regex("^tt\\d+$"))) return null
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong()
         return resultOr(null) {
-            app.get("${StremioConstants.CINEMETA_BASE}/meta/$kind/$id.json", timeout = timeoutS)
+            app.get("${StremioConstants.CINEMETA_BASE}/meta/$kind/$id.json", timeout = 20)
                 .parsedSafe<CatalogResponse>()?.meta
         }
     }
@@ -491,25 +460,21 @@ class StremioRepository(prefs: SharedPreferences?) {
             }
         )
         val raw = perAddon.flatMap { (_, streams) -> streams }
-        val subsEnabled = prefs?.getBoolean(StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED)
-            ?: StremioConstants.DEFAULT_SUBS_ENABLED
         StreamsResult(
             links = links,
-            inlineSubtitles = if (subsEnabled) raw.flatMap { it.subtitles }
+            inlineSubtitles = raw.flatMap { it.subtitles }
                 .mapNotNull { toRemoteSubtitle(it) }
-                .distinctBy { it.url } else emptyList(),
+                .distinctBy { it.url },
             youtubeIds = raw.mapNotNull { it.ytId?.let(::youtubeIdOf) }.distinct().take(100),
             externalUrls = raw.mapNotNull { it.externalUrl?.trim()?.takeIf { u -> u.startsWith("http://") || u.startsWith("https://") } }.distinct().take(10)
         )
     }
     private suspend fun addonStreams(addon: ConfiguredAddon, ref: LinkRef, remoteTrackers: List<String>): List<StremioStream> {
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtLeast(30L)
         return streamTypesFor(ref.type).amap { kind ->
             val encoded = safeEncode(ref.id) ?: return@amap emptyList<StremioStream>()
             val url = safeGetUrl("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix) ?: return@amap emptyList<StremioStream>()
             resultOr(emptyList()) {
-                app.get(url, timeout = timeoutS).parsedSafe<StreamsResponse>()?.streams.orEmpty()
+                app.get(url, timeout = 30).parsedSafe<StreamsResponse>()?.streams.orEmpty()
             }
         }.flatten().map { stream ->
             if (remoteTrackers.isEmpty() || stream.infoHash.isNullOrBlank()) stream
@@ -519,54 +484,33 @@ class StremioRepository(prefs: SharedPreferences?) {
         }
     }
 
-    @Volatile private var cachedTrackers: List<String>? = null
-    @Volatile private var cachedTrackersAt: Long = 0
     suspend fun fetchRemoteTrackers(): List<String> {
-        val now = System.currentTimeMillis()
-        cachedTrackers?.let { if (now - cachedTrackersAt < 6 * 60 * 60 * 1000L) return it }
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtMost(15L)
-        val remote = resultOr(emptyList()) {
-            app.get(StremioConstants.TRACKER_LIST_URL, timeout = timeoutS).text.take(64 * 1024)
+        return resultOr(emptyList()) {
+            app.get(StremioConstants.TRACKER_LIST_URL, timeout = 15).text.take(64 * 1024)
                 .lineSequence().map { it.trim() }
                 .filter { it.isNotEmpty() && !it.startsWith("#") }
                 .filter { it.matches(Regex("^(udp|http|https|ws)://[^\\s]+$")) }
                 .take(20).toList()
         }
-        if (remote.isNotEmpty()) {
-            cachedTrackers = remote
-            cachedTrackersAt = now
-            return remote
-        }
-        return cachedTrackers.orEmpty()
     }
 
     suspend fun globalSubtitles(imdbId: String?, season: Int?, episode: Int?): List<RemoteSubtitle> {
-        val subsEnabled = prefs?.getBoolean(StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED)
-            ?: StremioConstants.DEFAULT_SUBS_ENABLED
-        if (!subsEnabled || imdbId.isNullOrBlank()) return emptyList()
+        if (imdbId.isNullOrBlank()) return emptyList()
         if (!imdbId.matches(Regex("^tt\\d+$"))) return emptyList()
         val slug = if (season == null || episode == null) "movie/$imdbId" else "series/$imdbId:$season:$episode"
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtMost(30L)
         return resultOr(emptyList()) {
-            app.get("${StremioConstants.OPENSUBS_API}/subtitles/$slug.json", timeout = timeoutS)
+            app.get("${StremioConstants.OPENSUBS_API}/subtitles/$slug.json", timeout = 30)
                 .parsedSafe<SubsResponse>()?.subtitles.orEmpty()
         }.mapNotNull(::toRemoteSubtitle).distinctBy { it.url }
     }
     suspend fun subtitlesFor(ref: LinkRef): List<RemoteSubtitle> = supervisorScope {
-        val subsEnabled = prefs?.getBoolean(StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED)
-            ?: StremioConstants.DEFAULT_SUBS_ENABLED
-        if (!subsEnabled) return@supervisorScope emptyList()
         val subId = resolveStreamId(ref.type, ref.id)
-        val timeoutS = (prefs?.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)
-            ?: StremioConstants.DEFAULT_TIMEOUT_S).coerceIn(5, 120).toLong().coerceAtMost(30L)
         configuredAddons().filter { it.hasSubtitles }.map { addon ->
             async {
                 val encoded = safeEncode(subId) ?: return@async emptyList<RemoteSubtitle>()
                 val url = safeGetUrl("${addon.base}/subtitles/${ref.type}/$encoded.json", addon.querySuffix) ?: return@async emptyList<RemoteSubtitle>()
                 resultOr(emptyList()) {
-                    app.get(url, timeout = timeoutS).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
+                    app.get(url, timeout = 30).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
                 }.mapNotNull(::toRemoteSubtitle)
             }
         }.flatMap { resultOr(emptyList()) { it.await() } }

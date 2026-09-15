@@ -20,13 +20,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
-    testOptions { unitTests.isReturnDefaultValues = true }
 }
 dependencies {
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.browser:browser:1.8.0")
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20231013")
 }
 tasks.withType<KotlinJvmCompile>().configureEach {
     compilerOptions {

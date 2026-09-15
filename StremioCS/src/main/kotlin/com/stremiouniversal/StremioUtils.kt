@@ -37,7 +37,6 @@ fun String.isValidQuerySuffix(): Boolean {
 }
 
 fun String.fixSourceUrl(): String {
-    // Compat shim (StremioAddon/insta pattern): delegate to the canonical normalizer.
     return normalizeAddonUrl(this)?.removeSuffix("/manifest.json") ?: this.replace("/manifest.json", "").replace(Regex("^stremio://", RegexOption.IGNORE_CASE), "https://")
 }
 fun fixSourceName(name: String?, title: String?, description: String?): String {
@@ -78,10 +77,6 @@ fun addonDisplayHost(manifestUrl: String): String =
         .takeIf { it.isNotEmpty() } ?: manifestUrl.take(32)
 fun addonBaseKey(manifestUrl: String): String =
     manifestBase(manifestUrl).lowercase().trimEnd('/')
-/** Syntactic gate: true when [normalizeAddonUrl] accepts the input. */
-fun isValidManifestUrl(raw: String?): Boolean = normalizeAddonUrl(raw) != null
-/** Back-compat alias kept for callers/tests expecting the old name. */
-fun parseAddonUrl(raw: String?): String? = normalizeAddonUrl(raw)
 fun streamTypesFor(type: String): List<String> {
     val t = type.lowercase()
     return when (t) {

@@ -24,12 +24,14 @@ cloudstreamrepo://raw.githubusercontent.com/rougegz/cs-repo/builds/repo.json
 
 Fresh install starts empty. Add your own:
 
-1. Extensions → StremioCS → Settings → **Browse Addons** (in-app mini-browser,
-   locked to `https://stremio-addons.net`) → open an addon → **Copy Link**.
+1. Extensions → StremioCS → Settings → **Browse Addons** (mini-browser, stays on
+   `https://stremio-addons.net`) to discover one, then long-press to copy its
+   manifest URL.
 2. Back in Settings → **Add** (accepts `https://…`, `stremio://…`, bare host,
    `Name|URL`, `?token=` query) or **Paste** from clipboard.
 3. Reorder with ↑/↓ (order = catalogue & stream priority), toggle, search,
-   Export/Import/Clear in Data.
+   Export/Import/Clear in Data. Subtitles load automatically from any subtitle
+   addon — no toggle needed.
 
 Notes:
 

@@ -12,10 +12,6 @@ object AddonUrlOpener {
     fun openBrowseAddons(context: Context) {
         openUrl(context, StremioConstants.BROWSE_ADDONS_URL)
     }
-    /** Public entry for the in-app mini-browser "Open externally" fallback. */
-    fun openExternalUrl(context: Context, url: String) {
-        openUrl(context, url)
-    }
     private fun openUrl(context: Context, url: String) {
         val uri = runCatching { Uri.parse(url) }.getOrNull()
         if (uri == null || (uri.scheme?.lowercase() != "http" && uri.scheme?.lowercase() != "https")) {

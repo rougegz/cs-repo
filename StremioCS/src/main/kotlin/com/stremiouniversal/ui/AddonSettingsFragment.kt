@@ -30,7 +30,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 class AddonSettingsFragment : BottomSheetDialogFragment() {
     private lateinit var repository: StremioRepository
-    private lateinit var prefs: android.content.SharedPreferences
     private lateinit var rowsBox: LinearLayout
     private lateinit var emptyView: TextView
     private lateinit var searchInput: EditText
@@ -38,7 +37,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = requireContext().getSharedPreferences(
+        val prefs = requireContext().getSharedPreferences(
             StremioConstants.PREFS_NAME, Context.MODE_PRIVATE
         )
         repository = StremioRepository(prefs)
@@ -75,8 +74,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         val status = TextView(ctx).apply { textSize = 12f }
         root.addView(addRow(ctx, status))
         root.addView(status)
-        root.addView(header(ctx, "General", 16f))
-        root.addView(generalRow(ctx))
         root.addView(header(ctx, "Data", 16f))
         root.addView(dataRow(ctx))
         root.addView(hint(ctx, "Browse: ${StremioConstants.BROWSE_ADDONS_URL} • Order sets catalogue & stream priority."))
@@ -109,13 +106,8 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             text = "Browse Addons"
             isAllCaps = false
             setOnClickListener {
-                // In-app mini-browser locked to stremio-addons.net; external fallback if WebView missing.
                 try {
-                    AddonBrowserDialog.show(ctx, onPickUrl = { picked ->
-                        searchInput.setText("")
-                        tryAdd(ctx, picked, null)
-                        rebuildRows(ctx)
-                    })
+                    AddonBrowserDialog.show(ctx)
                 } catch (_: Exception) {
                     AddonUrlOpener.openBrowseAddons(ctx)
                 }
@@ -315,58 +307,6 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
             } else {
                 status?.text = "Added, but manifest did not load — check the URL."
             }
-        }
-    }
-    private fun generalRow(ctx: Context): LinearLayout {
-        val box = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 4, 0, 4)
-        }
-        box.addView(switchPref(ctx, "Subtitles enabled", StremioConstants.KEY_SUBS_ENABLED, StremioConstants.DEFAULT_SUBS_ENABLED))
-        box.addView(switchPref(ctx, "Search fallback (scan catalogs when native search is thin)", StremioConstants.KEY_SEARCH_FALLBACK, StremioConstants.DEFAULT_SEARCH_FALLBACK))
-        box.addView(hint(ctx, "Timeout ${prefs.getInt(StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S)}s • Cache ${prefs.getInt(StremioConstants.KEY_CACHE_TTL_H, StremioConstants.DEFAULT_CACHE_TTL_H)}h — tap to adjust."))
-        box.addView(numberRow(ctx, "Timeout", StremioConstants.KEY_TIMEOUT_S, StremioConstants.DEFAULT_TIMEOUT_S, 5, 120, "s"))
-        box.addView(numberRow(ctx, "Manifest cache", StremioConstants.KEY_CACHE_TTL_H, StremioConstants.DEFAULT_CACHE_TTL_H, 0, 168, "h"))
-        return box
-    }
-    private fun switchPref(ctx: Context, label: String, key: String, default: Boolean): LinearLayout {
-        val sw = SwitchMaterial(ctx).apply {
-            text = label
-            isChecked = prefs.getBoolean(key, default)
-            setOnCheckedChangeListener { _, checked ->
-                prefs.edit().putBoolean(key, checked).apply()
-            }
-        }
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 6, 0, 6)
-            addView(sw)
-        }
-    }
-    private fun numberRow(ctx: Context, label: String, key: String, default: Int, min: Int, max: Int, suffix: String): LinearLayout {
-        val value = TextView(ctx).apply {
-            text = "$label: ${prefs.getInt(key, default)}$suffix"
-            textSize = 14f
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        fun cycle() {
-            val cur = prefs.getInt(key, default)
-            val next = when {
-                cur >= max -> min
-                key == StremioConstants.KEY_TIMEOUT_S -> (cur + 5).coerceAtMost(max)
-                else -> (cur + 6).coerceAtMost(max)
-            }
-            prefs.edit().putInt(key, next).apply()
-            value.text = "$label: ${next}$suffix"
-        }
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 4, 0, 4)
-            addView(value)
-            addView(MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                text = "Change"
-                setOnClickListener { cycle() }
-            })
         }
     }
     private fun dataRow(ctx: Context): LinearLayout {
