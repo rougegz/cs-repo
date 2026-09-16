@@ -8,6 +8,14 @@ suspend fun <T> resultOr(default: T, block: suspend () -> T): T = try {
 } catch (_: Exception) {
     default
 }
+fun isPlaceholderStream(name: String?, description: String?, externalUrl: String?): Boolean {
+    val text = (name.orEmpty() + " " + description.orEmpty()).lowercase()
+    val url = externalUrl.orEmpty().lowercase()
+    if (text.contains("no streams found")) return true
+    if (text.contains("donat") || text.contains("discord") || text.contains("click here to donate")) return true
+    if (url.contains("discord.gg") || url.contains("donation") || url.contains("donate") || url.contains("buymeacoffee") || url.contains("patreon") || url.contains("ko-fi")) return true
+    return false
+}
 private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv")
 private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.opentrackr.org:1337/announce",
@@ -156,6 +164,7 @@ fun buildMagnet(infoHash: String?, name: String?, sources: List<String>, fileIdx
                 when {
                     it.startsWith("tracker:") -> it.removePrefix("tracker:")
                     it.startsWith("dht:") -> it.removePrefix("dht:")
+                    it.startsWith("udp://") || it.startsWith("http://") || it.startsWith("https://") || it.startsWith("ws://") || it.startsWith("wss://") -> it
                     else -> null
                 }
             }
@@ -198,6 +207,7 @@ fun splitKodiHeaders(url: String): Pair<String, Map<String, String>> {
     return url.substring(0, cut) to headers
 }
 fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): StreamLink? {
+    if (isPlaceholderStream(stream.name, stream.description ?: stream.title, stream.externalUrl)) return null
     val direct = stream.url?.trim().orEmpty()
     val hash = stream.infoHash?.trim().orEmpty()
     val body = stream.description?.trim().orEmpty().ifEmpty { stream.title?.trim().orEmpty() }
@@ -210,6 +220,8 @@ fun toStreamLink(stream: StremioStream, addonName: String, addonOrder: Int): Str
     val url = when {
         direct.startsWith("http://") || direct.startsWith("https://") -> {
             val (clean, kodi) = splitKodiHeaders(direct)
+            val lowerClean = clean.lowercase()
+            if (lowerClean.contains("discord.gg") || lowerClean.contains("donation")) return null
             val path = clean.replace(Regex("^https?://[^/]+"), "")
             if (Regex("/(login|logout|signin|signup)([._?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(path)) return null
             kodiHeaders = kodi
@@ -249,7 +261,7 @@ fun sortAndDedupe(links: List<StreamLink>): List<StreamLink> {
             .find(link.url)?.groupValues?.get(1)?.lowercase()
         val identity = if (hash != null) "$hash:${link.fileIdx}"
         else link.url.replace(Regex("^https?://"), "").trimEnd('/').substringBefore("#").lowercase()
-        identity.isNotEmpty() && seen.add("${link.addonOrder}|$identity")
+        identity.isNotEmpty() && seen.add(identity)
     }
     return unique.sortedWith(
         compareByDescending(StreamLink::resolutionRank)
