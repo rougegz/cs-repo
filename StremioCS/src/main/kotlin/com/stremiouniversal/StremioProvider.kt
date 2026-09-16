@@ -149,14 +149,14 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     }
     private fun canonicalType(type: String, hasEpisodes: Boolean): String {
         return when (type.lowercase()) {
-            "movie", "series", "anime", "hentai", "tv", "channel", "live", "livestream", "iptv", "short" -> type.lowercase()
+            "movie", "series", "anime", "hentai", "tv", "channel", "live", "livestream", "iptv", "sport", "short" -> type.lowercase()
             else -> if (hasEpisodes) "series" else "movie"
         }
     }
     private fun contentTypeOf(type: String): TvType = when (type.lowercase()) {
         "movie", "short" -> TvType.Movie
         "series", "anime", "hentai" -> TvType.TvSeries
-        "tv", "channel", "live", "livestream", "iptv" -> TvType.Others
+        "tv", "channel", "live", "livestream", "iptv", "sport" -> TvType.Others
         else -> TvType.Movie
     }
 }
