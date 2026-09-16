@@ -35,6 +35,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             resultOr(null) { app.get(url, timeout = timeout).parsedSafe<T>() }?.let { return it }
             if (attempt < 2) kotlinx.coroutines.delay(500L * (attempt + 1))
         }
+        Log.w("StremioCS", "fetch failed host=" + url.substringAfter("://").substringBefore("/"))
         return null
     }
     fun loadConfiguredAddons(): List<AddonConfig> {
@@ -458,7 +459,7 @@ class StremioRepository(prefs: SharedPreferences?) {
             }
         )
         val raw = perAddon.flatMap { (_, streams) -> streams }
-        StreamsResult(
+        val result = StreamsResult(
             links = links,
             inlineSubtitles = raw.flatMap { it.subtitles }
                 .mapNotNull { toRemoteSubtitle(it) }
@@ -466,6 +467,8 @@ class StremioRepository(prefs: SharedPreferences?) {
             youtubeIds = raw.mapNotNull { it.ytId?.let(::youtubeIdOf) }.distinct().take(100),
             externalUrls = raw.filter { !isPlaceholderStream(it.name, it.description ?: it.title, it.externalUrl) }.mapNotNull { it.externalUrl?.trim()?.takeIf { u -> u.startsWith("http://") || u.startsWith("https://") } }.distinct().take(10)
         )
+        Log.i("StremioCS", "streams id=" + streamRef.id + " targets=" + targets.size + " links=" + result.links.size + " yt=" + result.youtubeIds.size + " ext=" + result.externalUrls.size)
+        return@supervisorScope result
     }
     private suspend fun addonStreams(addon: ConfiguredAddon, ref: LinkRef, remoteTrackers: List<String>): List<StremioStream> {
         return streamTypesFor(ref.type).amap { kind ->
