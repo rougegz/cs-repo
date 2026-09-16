@@ -55,9 +55,10 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val ref = parseLinkRef(url) ?: return null
         val details = resultOr(null) { repository.metaDetails(ref) } ?: return null
-        val payload = LinkRef(ref.base, details.type.ifEmpty { ref.type }, details.id).toJsonString()
+        val safeType = canonicalType(details.type.ifEmpty { ref.type }, details.videos.isNotEmpty())
+        val payload = LinkRef(ref.base, safeType, details.id).toJsonString()
         val hasEpisodes = details.videos.isNotEmpty()
-        val screenType = if (hasEpisodes) TvType.TvSeries else contentTypeOf(details.type)
+        val screenType = if (hasEpisodes) TvType.TvSeries else contentTypeOf(safeType)
         if (!hasEpisodes) {
             return newMovieLoadResponse(details.name, payload, screenType, payload) {
                 posterUrl = details.poster
@@ -72,7 +73,7 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             }
         }
         val episodes = details.videos.map { video ->
-            newEpisode(LinkRef(ref.base, details.type.ifEmpty { ref.type }, video.id).toJsonString()) {
+            newEpisode(LinkRef(ref.base, safeType, video.id).toJsonString()) {
                 name = video.title
                 season = video.season
                 episode = video.episode
@@ -146,9 +147,15 @@ class StremioProvider(private val repository: StremioRepository) : MainAPI() {
             posterUrl = poster
         }
     }
+    private fun canonicalType(type: String, hasEpisodes: Boolean): String {
+        return when (type.lowercase()) {
+            "movie", "series", "anime", "hentai", "tv", "channel", "live", "livestream", "iptv", "short" -> type.lowercase()
+            else -> if (hasEpisodes) "series" else "movie"
+        }
+    }
     private fun contentTypeOf(type: String): TvType = when (type.lowercase()) {
         "movie", "short" -> TvType.Movie
-        "series", "anime" -> TvType.TvSeries
+        "series", "anime", "hentai" -> TvType.TvSeries
         "tv", "channel", "live", "livestream", "iptv" -> TvType.Others
         else -> TvType.Movie
     }
