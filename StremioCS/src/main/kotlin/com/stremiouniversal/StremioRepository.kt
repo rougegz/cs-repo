@@ -30,7 +30,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         if (!suffix.isValidQuerySuffix()) return null
         return full
     }
-    private suspend inline fun <reified T> fetchJson(url: String, timeout: Long): T? {
+    private suspend inline fun <reified T : Any> fetchJson(url: String, timeout: Long): T? {
         repeat(3) { attempt ->
             resultOr(null) { app.get(url, timeout = timeout).parsedSafe<T>() }?.let { return it }
             if (attempt < 2) kotlinx.coroutines.delay(500L * (attempt + 1))
