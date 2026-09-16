@@ -344,14 +344,14 @@ class StremioRepository(prefs: SharedPreferences?) {
     }
     private suspend fun elfhostedMeta(type: String, id: String): CatalogEntry? {
         val kind = if (type == "movie") "movie" else "series"
-        val encoded = safeEncode(id) ?: return null
+        val encoded = safeEncode(id)?.replace("%3A", ":") ?: return null
         return resultOr(null) {
             app.get("${StremioConstants.ELFHOSTED_BASE}/meta/$kind/$encoded.json", timeout = 20)
                 .parsedSafe<CatalogResponse>()?.meta
         }?.takeIf { it.id.isEmpty() || it.id == id }
     }
     suspend fun fetchMeta(addon: ConfiguredAddon, type: String, id: String): CatalogEntry? {
-        val encoded = safeEncode(id) ?: return null
+        val encoded = safeEncode(id)?.replace("%3A", ":") ?: return null
         val url = safeGetUrl("${addon.base}/meta/$type/$encoded.json", addon.querySuffix) ?: return null
         repeat(3) { attempt ->
             val text = resultOr(null) {
@@ -367,12 +367,19 @@ class StremioRepository(prefs: SharedPreferences?) {
         return null
     }
     private suspend fun cinemetaMeta(type: String, id: String): CatalogEntry? {
-        val kind = if (type == "movie") "movie" else "series"
         if (!id.matches(Regex("^tt\\d+$"))) return null
-        return resultOr(null) {
-            app.get("${StremioConstants.CINEMETA_BASE}/meta/$kind/$id.json", timeout = 20)
-                .parsedSafe<CatalogResponse>()?.meta
+        val kinds = when (type.lowercase()) {
+            "movie" -> listOf("movie")
+            "series", "anime", "hentai" -> listOf("series")
+            else -> listOf("movie", "series")
         }
+        for (kind in kinds) {
+            resultOr(null) {
+                app.get("${StremioConstants.CINEMETA_BASE}/meta/$kind/$id.json", timeout = 20)
+                    .parsedSafe<CatalogResponse>()?.meta
+            }?.let { return it }
+        }
+        return null
     }
 
     suspend fun resolveStreamId(type: String, id: String): String {
@@ -452,12 +459,12 @@ class StremioRepository(prefs: SharedPreferences?) {
                 .mapNotNull { toRemoteSubtitle(it) }
                 .distinctBy { it.url },
             youtubeIds = raw.mapNotNull { it.ytId?.let(::youtubeIdOf) }.distinct().take(100),
-            externalUrls = raw.mapNotNull { it.externalUrl?.trim()?.takeIf { u -> u.startsWith("http://") || u.startsWith("https://") } }.distinct().take(10)
+            externalUrls = raw.filter { !isPlaceholderStream(it.name, it.description ?: it.title, it.externalUrl) }.mapNotNull { it.externalUrl?.trim()?.takeIf { u -> u.startsWith("http://") || u.startsWith("https://") } }.distinct().take(10)
         )
     }
     private suspend fun addonStreams(addon: ConfiguredAddon, ref: LinkRef, remoteTrackers: List<String>): List<StremioStream> {
         return streamTypesFor(ref.type).amap { kind ->
-            val encoded = safeEncode(ref.id) ?: return@amap emptyList<StremioStream>()
+            val encoded = safeEncode(ref.id)?.replace("%3A", ":") ?: return@amap emptyList<StremioStream>()
             val url = safeGetUrl("${addon.base}/stream/$kind/$encoded.json", addon.querySuffix) ?: return@amap emptyList<StremioStream>()
             fetchJson<StreamsResponse>(url, 30)?.streams.orEmpty()
         }.flatten().map { stream ->
@@ -499,7 +506,7 @@ class StremioRepository(prefs: SharedPreferences?) {
         val subId = resolveStreamId(ref.type, ref.id)
         configuredAddons().filter { it.hasSubtitles }.map { addon ->
             async {
-                val encoded = safeEncode(subId) ?: return@async emptyList<RemoteSubtitle>()
+                val encoded = safeEncode(subId)?.replace("%3A", ":") ?: return@async emptyList<RemoteSubtitle>()
                 val url = safeGetUrl("${addon.base}/subtitles/${ref.type}/$encoded.json", addon.querySuffix) ?: return@async emptyList<RemoteSubtitle>()
                 resultOr(emptyList()) {
                     app.get(url, timeout = 30).parsedSafe<SubsResponse>()?.subtitles.orEmpty()
