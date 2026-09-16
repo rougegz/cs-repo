@@ -16,7 +16,7 @@ fun isPlaceholderStream(name: String?, description: String?, externalUrl: String
     if (url.contains("discord.gg") || url.contains("donation") || url.contains("donate") || url.contains("buymeacoffee") || url.contains("patreon") || url.contains("ko-fi")) return true
     return false
 }
-private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv")
+private val LIVE_TYPES = setOf("tv", "channel", "livestream", "live", "iptv", "sport")
 private val FALLBACK_TRACKERS = listOf(
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.demonii.com:1337/announce",
