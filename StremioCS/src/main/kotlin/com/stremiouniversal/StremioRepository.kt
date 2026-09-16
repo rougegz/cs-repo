@@ -304,26 +304,31 @@ class StremioRepository(prefs: SharedPreferences?) {
     suspend fun metaDetails(ref: LinkRef): MetaDetails? {
         val addons = configuredAddons()
         if (addons.isEmpty()) return null
+        val wantsEpisodes = ref.type.lowercase() in setOf("series", "anime", "hentai", "sport")
+        val candidates = mutableListOf<MetaDetails>()
         val origin = addons.firstOrNull { it.base == ref.base }
         if (origin != null) {
             val entry = fetchMeta(origin, ref.type, ref.id)
             if (entry != null && (entry.id == ref.id || entry.id.isEmpty())) {
-                imdbIdFromLinks(entry)?.let { return fetchMetaByImdb(addons, ref.type, it) ?: entry.toDetails() }
-                return entry.toDetails()
+                imdbIdFromLinks(entry)?.let {
+                    fetchMetaByImdb(addons, ref.type, it)?.let { candidates.add(it) } ?: entry.toDetails()?.let { candidates.add(it) }
+                } ?: entry.toDetails()?.let { candidates.add(it) }
             } else if (entry != null) {
                 Log.w("StremioCS", "metaDetails: id mismatch requested=${ref.id} got=${entry.id}")
             }
         }
-
-        elfhostedMeta(ref.type, ref.id)?.toDetails()?.let { return it }
+        elfhostedMeta(ref.type, ref.id)?.toDetails()?.let { candidates.add(it) }
         if (ref.id.matches(Regex("^tt\\d+$"))) {
-            cinemetaMeta(ref.type, ref.id)?.toDetails()?.let { return it }
+            cinemetaMeta(ref.type, ref.id)?.toDetails()?.let { candidates.add(it) }
         }
-        return supervisorScope {
+        supervisorScope {
             addons.filter { it.hasMeta && it.base != ref.base }.map { addon ->
                 async { fetchMeta(addon, ref.type, ref.id)?.toDetails() }
-            }.mapNotNull { resultOr(null) { it.await() } }.firstOrNull()
+            }.mapNotNull { resultOr(null) { it.await() } }.forEach { candidates.add(it) }
         }
+        if (candidates.isEmpty()) return null
+        if (wantsEpisodes) candidates.firstOrNull { it.videos.isNotEmpty() }?.let { return it }
+        return candidates.firstOrNull()
     }
     private fun imdbIdFromLinks(entry: CatalogEntry): String? {
 
