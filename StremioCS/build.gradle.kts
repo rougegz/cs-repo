@@ -1,7 +1,7 @@
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
-version = 6
+version = 7
 cloudstream {
     description = """
         Watch anything with your own Stremio addons. Open Settings to add them.
