@@ -5,6 +5,7 @@ object StremioConstants {
     const val KEY_SCHEMA_V = "stremio_schema_v"
     const val SCHEMA_V = 2
     const val BROWSE_ADDONS_URL = "https://stremio-addons.net"
+    const val ADDON_DIRECTORY_URL = "https://api.strem.io/addonscollection.json"
     const val CINEMETA_BASE = "https://v3-cinemeta.strem.io"
 
     const val ELFHOSTED_BASE = "https://aiometadata.elfhosted.com/stremio/b7cb164b-074b-41d5-b458-b3a834e197bb"

@@ -11,6 +11,7 @@ import android.webkit.WebViewClient
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.stremiouniversal.StremioConstants
 
@@ -29,6 +30,11 @@ object AddonBrowserDialog {
         web = WebView(ctx).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            settings.loadWithOverviewMode = true
+            settings.useWideViewPort = true
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+            settings.textZoom = 100
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.setGeolocationEnabled(false)
@@ -52,6 +58,12 @@ object AddonBrowserDialog {
                 override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
                     errorView.visibility = android.view.View.VISIBLE
                 }
+            }
+            setInitialScale(0)
+            if (isOldWebView(ctx)) {
+                errorView.text = "System browser too old for the full site — use the in-app Browse list instead."
+                errorView.visibility = android.view.View.VISIBLE
+                Toast.makeText(ctx, "Full site needs a newer system browser", Toast.LENGTH_LONG).show()
             }
             loadUrl(StremioConstants.BROWSE_ADDONS_URL)
         }
@@ -97,5 +109,21 @@ object AddonBrowserDialog {
             }
         }
         dialog.show()
+    }
+
+    private fun isOldWebView(ctx: Context): Boolean {
+        try {
+            val pm = ctx.packageManager
+            for (pkg in listOf("com.google.android.webview", "com.android.webview")) {
+                val major = runCatching {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(pkg, 0).versionName
+                        ?.substringBefore(".")?.toIntOrNull()
+                }.getOrNull()
+                if (major != null) return major < 90
+            }
+        } catch (_: Exception) {
+        }
+        return android.os.Build.VERSION.SDK_INT <= 25
     }
 }

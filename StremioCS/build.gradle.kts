@@ -23,7 +23,6 @@ android {
 }
 dependencies {
     implementation("com.google.android.material:material:1.13.0")
-    implementation("androidx.browser:browser:1.8.0")
 }
 tasks.withType<KotlinJvmCompile>().configureEach {
     compilerOptions {
