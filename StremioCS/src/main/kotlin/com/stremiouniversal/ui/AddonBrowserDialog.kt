@@ -13,6 +13,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.button.MaterialButton
 import com.stremiouniversal.StremioConstants
 
 object AddonBrowserDialog {
@@ -48,6 +49,12 @@ object AddonBrowserDialog {
                     errorView.visibility = android.view.View.GONE
                 }
 
+                override fun onPageFinished(view: WebView, url: String) {
+                    view.evaluateJavascript(
+                        "(function(){var m=document.querySelector('meta[name=viewport]');if(!m){m=document.createElement('meta');m.setAttribute('name','viewport');document.getElementsByTagName('head')[0].appendChild(m);}m.setAttribute('content','width=device-width,initial-scale=1,maximum-scale=5');var c=document.createElement('style');c.type='text/css';c.appendChild(document.createTextNode('img,svg,video,canvas{max-width:100%!important;height:auto!important}body{overflow-x:hidden;max-width:100vw}'));document.getElementsByTagName('head')[0].appendChild(c);})()"
+                    ) {}
+                }
+
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && request.isForMainFrame) {
                         errorView.visibility = android.view.View.VISIBLE
@@ -72,6 +79,12 @@ object AddonBrowserDialog {
             background = null
             contentDescription = "Close browser"
         }
+        val reload = MaterialButton(ctx).apply {
+            text = "Reload"
+            isAllCaps = false
+            isFocusable = true
+            setOnClickListener { web.reload() }
+        }
         val toolbar = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, 0, 0, dp(4))
@@ -80,6 +93,7 @@ object AddonBrowserDialog {
                 textSize = 16f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
+            addView(reload)
             addView(close)
         }
         val root = LinearLayout(ctx).apply {
@@ -90,7 +104,8 @@ object AddonBrowserDialog {
             addView(web.apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    (480 * ctx.resources.displayMetrics.density).toInt()
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    1f
                 )
             })
         }
@@ -109,6 +124,10 @@ object AddonBrowserDialog {
             }
         }
         dialog.show()
+        dialog.window?.setLayout(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        )
     }
 
     private fun isOldWebView(ctx: Context): Boolean {
