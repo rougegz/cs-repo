@@ -7,6 +7,8 @@ import android.view.KeyEvent
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
 import android.webkit.WebViewClient
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -26,6 +28,19 @@ object AddonBrowserDialog {
             textSize = 13f
             visibility = android.view.View.GONE
             setPadding(dp(4), dp(8), dp(4), dp(8))
+        }
+        var pendingSsl: SslErrorHandler? = null
+        val unsafeButton = MaterialButton(ctx).apply {
+            text = "Load anyway (unsafe)"
+            isAllCaps = false
+            isFocusable = true
+            visibility = android.view.View.GONE
+            setOnClickListener {
+                pendingSsl?.proceed()
+                pendingSsl = null
+                visibility = android.view.View.GONE
+                errorView.visibility = android.view.View.GONE
+            }
         }
         lateinit var web: WebView
         web = WebView(ctx).apply {
@@ -61,6 +76,13 @@ object AddonBrowserDialog {
                     }
                 }
 
+                override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                    pendingSsl = handler
+                    errorView.text = "Secure connection failed — this TV trusts too few certificates. Reload will not help."
+                    errorView.visibility = android.view.View.VISIBLE
+                    unsafeButton.visibility = android.view.View.VISIBLE
+                }
+
                 @Suppress("DEPRECATION")
                 override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
                     errorView.visibility = android.view.View.VISIBLE
@@ -83,7 +105,11 @@ object AddonBrowserDialog {
             text = "Reload"
             isAllCaps = false
             isFocusable = true
-            setOnClickListener { web.reload() }
+            setOnClickListener {
+                pendingSsl = null
+                unsafeButton.visibility = android.view.View.GONE
+                web.reload()
+            }
         }
         val toolbar = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -101,6 +127,7 @@ object AddonBrowserDialog {
             setPadding(dp(16), dp(12), dp(16), dp(8))
             addView(toolbar)
             addView(errorView)
+            addView(unsafeButton)
             addView(web.apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
