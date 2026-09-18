@@ -79,11 +79,7 @@ class AddonSettingsFragment : BottomSheetDialogFragment() {
         val browse = MaterialButton(ctx).apply {
             text = "Browse Addons"
             isAllCaps = false
-            setOnClickListener {
-                AddonBrowserFragment().apply {
-                    onChanged = { rebuildRows(ctx) }
-                }.show(parentFragmentManager, "AddonBrowser")
-            }
+            setOnClickListener { AddonBrowserDialog.show(ctx) }
         }
         val paste = MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = "Paste"

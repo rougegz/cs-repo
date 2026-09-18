@@ -61,7 +61,7 @@ object AddonBrowserDialog {
             }
             setInitialScale(0)
             if (isOldWebView(ctx)) {
-                errorView.text = "System browser too old for the full site — use the in-app Browse list instead."
+                errorView.text = "System browser too old — the full site may not load."
                 errorView.visibility = android.view.View.VISIBLE
                 Toast.makeText(ctx, "Full site needs a newer system browser", Toast.LENGTH_LONG).show()
             }
