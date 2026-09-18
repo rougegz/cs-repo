@@ -7,7 +7,7 @@ cloudstream {
         Watch anything with your own Stremio addons. Open Settings to add them.
     """.trimIndent()
     authors = listOf("rougegz")
-    status = 1
+    status = 2
     tvTypes = listOf("Movie", "TvSeries")
     language = "en"
     iconUrl = "https://raw.githubusercontent.com/Stremio/stremio-web/development/assets/images/stremio_symbol.png"
